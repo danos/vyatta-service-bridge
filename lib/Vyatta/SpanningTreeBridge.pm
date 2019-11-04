@@ -113,12 +113,14 @@ sub get_default_params {
         brmaxage    => $BRIDGE_MAX_AGE,
         dsgnroot    => $bridge_id,
         enabled     => $enabled,
+        exists      => 1,
         fwddly      => $BRIDGE_FWD_DELAY,
         hellotime   => $BRIDGE_HELLO_TIME,
         intpathcost => 0,
         lasttcnport => 0,
         maxage      => $BRIDGE_MAX_AGE,
         maxhops     => $BRIDGE_MAX_HOPS,
+        mstpdattrs  => 0,
         pathcost    => 0,
         priority    => $BRIDGE_PRIORITY,
         rgnlroot    => $bridge_id,
@@ -269,6 +271,10 @@ sub get_params_mstpctl {
     # enabled.
     #
     my $cmdout = get_cmd_out("$MSTPCTL showbridge $bridge_name");
+    if (!defined($cmdout)) {
+        $params{exists} = 0;
+        return \%params;
+    }
 
     if ( $cmdout =~ m/bridge \s+ id \s+ (\S+)/msx ) {
         $params{bridge_id} = $1;
@@ -344,6 +350,8 @@ sub get_params_mstpctl {
 
     $params{ageingtime}  = get_ageing_time($bridge_name);
     $params{stp_enabled} = 1;
+    $params{exists}      = 1;
+    $params{mstpdattrs}  = 1;
 
     return \%params;
 }
@@ -386,7 +394,6 @@ sub new {
     } else {
         $objref = get_default_params( $bridge_name, $objref );
     }
-    $objref->{exists} = 1;
     $objref->{debug}  = $debug;
 
     bless $objref, $class;
@@ -527,7 +534,9 @@ sub show_mstp_bridge_brief {
         printf( $fmt,     "mstp instance", $msti->{'mstid'} );
         printf( $fmtmsti, "bridge id",     $msti->{'bridge-id'} );
         printf( $fmtmsti, "regional root", $msti->{'regional-root'} );
-        printf( $fmtmsti, "root port", port_string( $msti->{'root-port'} ) );
+        printf( $fmtmsti,
+            "root port",
+            port_string( $switch->{'bridge_name'}, $msti->{'root-port'} ) );
         printf( $fmtmsti, "vlans",     $msti->{'vlans'} );
     }
 }
@@ -555,6 +564,7 @@ sub show_mstp_bridge_msti {
 
     print "MSTP: \n" . Dumper($mstp) if $switch->{debug};
 
+    my $swname  = $switch->{'bridge_name'};
     my $fmtmsti = "  " . $fmt;
     $fmt =~ /%-(\S+)s \s+/msx;
     my $fsize = int( $1 + 2 );
@@ -563,7 +573,8 @@ sub show_mstp_bridge_msti {
         printf( $fmt2,    "mstp instance", $msti->{'mstid'} );
         printf( $fmtmsti, "bridge id",     $msti->{'bridge-id'} );
         printf( $fmtmsti, "regional root", $msti->{'regional-root'} );
-        printf( $fmtmsti, "root port", port_string( $msti->{'root-port'} ) );
+        printf( $fmtmsti,
+            "root port", port_string( $swname, $msti->{'root-port'} ) );
         printf( $fmtmsti, "vlans",     $msti->{'vlans'} );
         printf( $fmtmsti, 'internal path cost', $msti->{'internal-path-cost'} );
         printf( $fmtmsti,
@@ -575,10 +586,10 @@ sub show_mstp_bridge_msti {
         printf( $fmtmsti, 'topology change', $msti->{'topology-change'} );
         printf( $fmtmsti,
             'topology change port',
-            port_string( $msti->{'topology-change-port'} ) );
+            port_string( $swname, $msti->{'topology-change-port'} ) );
         printf( $fmtmsti,
             'last topology change port',
-            port_string( $msti->{'last-topology-change-port'} ) );
+            port_string( $swname, $msti->{'last-topology-change-port'} ) );
     }
 }
 
@@ -603,8 +614,9 @@ sub show_1_spanning_tree_bridge_status {
     my ( $bridge, $is_mstp ) = @_;
 
     my $fmt1a = "  %-20s %s\n";
+    my $brname = $bridge->{'bridge-name'};
 
-    printf( "%s\n", $bridge->{'bridge-name'} );
+    printf( "%s\n", $brname );
     printf( $fmt1a, 'link state', $bridge->{enabled} ? 'Up' : 'Down' );
     printf( $fmt1a,
         'STP state', $bridge->{'stp-state'} ? 'Enabled' : 'Disabled' );
@@ -622,18 +634,21 @@ sub show_1_spanning_tree_bridge_status {
         printf( $fmt1a, ' ', alt_bridgeid( $bridge->{'regional-root'} ) );
     }
 
-    printf( $fmt1a, 'root port', port_string( $bridge->{'root-port'} ) );
+    printf( $fmt1a,
+        'root port', port_string( $brname, $bridge->{'root-port'} ) );
 }
 
 sub show_1_spanning_tree_bridge_brief {
     my ( $bridge, $is_mstp ) = @_;
 
     my $fmt1 = "%-24s %s\n";
+    my $brname = $bridge->{'bridge-name'};
 
-    printf $fmt1, 'Bridge',               $bridge->{'bridge-name'};
+    printf $fmt1, 'Bridge',               $brname;
     printf $fmt1, 'Designated Root',      $bridge->{'designated-root'};
     printf $fmt1, 'Designated Root Cost', $bridge->{'path-cost'};
-    printf $fmt1, 'Designated Root Port', port_string( $bridge->{'root-port'} );
+    printf $fmt1, 'Designated Root Port',
+      port_string( $brname, $bridge->{'root-port'} );
     printf $fmt1, 'Bridge ID',            $bridge->{'bridge-id'};
 
     show_mstp_bridge_brief( $bridge, $fmt1 ) if $is_mstp;
@@ -660,7 +675,9 @@ sub show_1_spanning_tree_bridge {
     my $fmt3  = "  %-26s %s\n";
     my $fmt3a = "  %-26s %d\n";
 
-    printf "%s\n", $bridge->{'bridge-name'};
+    my $brname = $bridge->{'bridge-name'};
+
+    printf "%s\n", $brname;
     printf $fmt1, 'link enabled',    yesno( $bridge->{'enabled'} );
     printf $fmt1, 'stp enabled',     yesno( $bridge->{'stp-state'} );
     printf $fmt1, 'version',         $bridge->{'stp-version'};
@@ -670,7 +687,7 @@ sub show_1_spanning_tree_bridge {
         printf $fmt1, 'regional root', $bridge->{'regional-root'};
         show_mstp_bridge_region( $bridge, $fmt1 );
     }
-    printf $fmt1,  'root port',          port_string( $bridge->{'root-port'} );
+    printf $fmt1, 'root port', port_string( $brname, $bridge->{'root-port'} );
     printf $fmt2a, 'path cost',          $bridge->{'path-cost'};
     printf $fmt2b, 'internal path cost', $bridge->{'internal-path-cost'};
     printf $fmt2a, 'max age',            $bridge->{'max-age'};
@@ -688,10 +705,10 @@ sub show_1_spanning_tree_bridge {
     printf $fmt3,  'topology change',       $bridge->{'topology-change'};
     printf $fmt3,
       'topology change port',
-      port_string( $bridge->{'topology-change-port'} );
+      port_string( $brname, $bridge->{'topology-change-port'} );
     printf $fmt3,
       'last topology change port',
-      port_string( $bridge->{'last-topology-change-port'} );
+      port_string( $brname, $bridge->{'last-topology-change-port'} );
 
     show_mstp_bridge_msti( $bridge, $fmt3 ) if $is_mstp;
 }
@@ -742,11 +759,26 @@ sub show_spanning_tree_bridge {
     }
 }
 
+#
+# If the attributes were collected from the MSTP daemon (as opposed to
+# the locally defined defaults) and the proposed attribute value
+# hasn't changed, don't bother to "crank the handle".
+#
+sub param_no_change {
+    my ( $bridge, $key, $value ) = @_;
+
+    return
+         $bridge->{'mstpdattrs'}
+      && defined($key)
+      && ( $bridge->{$key} eq $value );
+}
+
 sub mstpctl_set_param {
-    my ( $bridge, $key, $value, $extra ) = @_;
+    my ( $bridge, $bkey, $key, $value, $extra ) = @_;
     my $rv = 0;
 
-    if ( $bridge->{'exists'} && defined($value) ) {
+    if ( $bridge->{'exists'} && defined($value) &&
+         !param_no_change($bridge, $bkey, $value)) {
         my $name   = $bridge->{'bridge_name'};
         my $debug  = $bridge->{'debug'};
         my $ignore = $debug ? "" : ">&/dev/null";
@@ -762,25 +794,25 @@ sub mstpctl_set_param {
 sub set_fwd_delay {
     my ( $self, $fdly ) = @_;
 
-    return mstpctl_set_param( $self, "setfdelay", $fdly );
+    return mstpctl_set_param( $self, "fwddly", "setfdelay", $fdly );
 }
 
 sub set_hello {
     my ( $self, $time ) = @_;
 
-    return mstpctl_set_param( $self, "sethello", $time );
+    return mstpctl_set_param( $self, "hellotime", "sethello", $time );
 }
 
 sub set_max_age {
     my ( $self, $time ) = @_;
 
-    return mstpctl_set_param( $self, "setmaxage", $time );
+    return mstpctl_set_param( $self, "maxage", "setmaxage", $time );
 }
 
 sub set_max_hops {
     my ( $self, $hops ) = @_;
 
-    return mstpctl_set_param( $self, "setmaxhops", $hops );
+    return mstpctl_set_param( $self, "maxhops", "setmaxhops", $hops );
 }
 
 sub set_priority {
@@ -788,21 +820,22 @@ sub set_priority {
 
     if ( defined($priority) ) {
         $priority = $priority / $BRPRI_MULTIPLIER unless $priority < 16;
+        return 0 if param_no_change($self, "priority", $priority);
     }
 
-    return mstpctl_set_param( $self, "settreeprio", $priority, 0 );
+    return mstpctl_set_param( $self, undef, "settreeprio", $priority, 0 );
 }
 
 sub set_tx_hold_count {
     my ( $self, $count ) = @_;
 
-    return mstpctl_set_param( $self, "settxholdcount", $count );
+    return mstpctl_set_param( $self, "txholdcount", "settxholdcount", $count );
 }
 
 sub set_spanning_tree_version {
     my ( $self, $version ) = @_;
 
-    return mstpctl_set_param( $self, "setforcevers", $version );
+    return mstpctl_set_param( $self, "version", "setforcevers", $version );
 }
 
 sub mstp_region_update {
@@ -819,7 +852,7 @@ sub mstp_region_update {
         "ALL", "SET"
 	);
 
-    return mstpctl_set_param( $self, "setmstconfid", $name, $revision );
+    return mstpctl_set_param( $self, undef, "setmstconfid", $name, $revision );
 }
 
 sub mstp_region_delete {
@@ -854,7 +887,7 @@ sub mstp_msti_delete {
     # With any mapped VLANs, trying to remove an MSTI always fails
     # (the daemon doesn't support removal)
     #
-    return mstpctl_set_param( $self, "deletetree", $mstid );
+    return mstpctl_set_param( $self, undef, "deletetree", $mstid );
 }
 
 sub mstp_msti_create {
@@ -862,7 +895,7 @@ sub mstp_msti_create {
     my $rv = 0;
 
     if ( !$self->{'mstp'}->{$mstid} ) {
-        $rv = mstpctl_set_param( $self, "createtree", $mstid );
+        $rv = mstpctl_set_param( $self, undef, "createtree", $mstid );
     }
 
     return $rv;
@@ -875,7 +908,7 @@ sub mstp_msti_set_priority {
         $priority = $priority / $BRPRI_MULTIPLIER unless $priority < 16;
     }
 
-    return mstpctl_set_param( $self, "settreeprio", $priority, $mstid );
+    return mstpctl_set_param( $self, undef, "settreeprio", $priority, $mstid );
 }
 
 sub mstp_msti_set_vlans {
@@ -894,8 +927,8 @@ sub mstp_msti_set_vlans {
     my $vid2fid  = "$fid:" . join( ",", @{$vlans} );
     my $fid2msti = "$mstid:$fid";
 
-    my $rv = mstpctl_set_param( $self, "setvid2fid", $vid2fid );
-    $rv = mstpctl_set_param( $self, "setfid2mstid", $fid2msti ) if ( !$rv );
+    my $rv = mstpctl_set_param( $self, undef, "setvid2fid", $vid2fid );
+    $rv = mstpctl_set_param( $self, undef, "setfid2mstid", $fid2msti ) if ( !$rv );
 
     return $rv;
 }

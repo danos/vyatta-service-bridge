@@ -18,6 +18,7 @@ use Readonly;
 
 use File::Slurp qw( read_dir read_file );
 use Vyatta::Misc qw( getInterfaces );
+use Vyatta::Interface;
 use Vyatta::Config;
 
 use base qw( Exporter );
@@ -28,7 +29,7 @@ our @EXPORT_OK =
   is_mstpd_enabled is_mstpd_running is_stp_cfgd is_stp_enabled is_switch
   mstpd_start mstpd_stop mstpd_restart port_name2no port_string bridge_id_old2new
   get_stp_cfg is_mstp_cfgd get_mstp_mstilist get_running_stp_version
-  show_bridge);
+  show_bridge get_cfg_bridge_ports);
 
 $VERSION = 1.00;
 
@@ -46,7 +47,6 @@ my $SPACE = q{ };
 #
 # Returns a bridge object with a minimal set of parameters.
 #
-#  exists      - 1 if the bridge exists, else 0
 #  stp_enabled - 1 if Spanning Tree is enabled, else 0
 #  priority    - Configured bridge priority
 #  mac         - bridge mac address
@@ -59,14 +59,10 @@ sub new {
 
     $objref->{bridge_name} = $bridge_name;
 
-    if ( ( -d "/sys/class/net/$bridge_name/bridge" ) ) {
-        $objref->{exists} = 1;
-    } else {
-        $objref->{exists} = 0;
-    }
+    my $exists = ( -d "/sys/class/net/$bridge_name/bridge" );
 
     my @port_list = ();
-    if ( $objref->{exists} ) {
+    if ( $exists ) {
         @port_list = get_bridge_ports($bridge_name);
     }
     $objref->{port_list} = [@port_list];
@@ -76,7 +72,7 @@ sub new {
     $objref->{priority}    = get_bridge_priority($bridge_name);
 
     my $mac;
-    if ( $objref->{exists} ) {
+    if ( $exists ) {
         $mac = read_file("/sys/class/net/$bridge_name/address");
         chomp($mac);
     } else {
@@ -155,6 +151,59 @@ sub get_bridge_ports {
     return @sorted_ports;
 }
 
+#
+# Does the supplied name match the supplied switch/bridge name? If no
+# switch/bridge name is provided the name automatically matches,
+# i.e. an undefined $brname its treated as a wildcard.
+#
+sub cfg_bridge_name_match {
+    my ( $brname, $name ) = @_;
+
+    return 0 if !defined($name);
+    return 1 if !defined($brname);
+    return 1 if $name eq $brname;
+    return 0;
+}
+
+#
+# Similar to the above function, except it lists the currently
+# configured bridge/switch ports
+#
+sub get_cfg_bridge_ports {
+    my ( $type, $brname ) = @_;
+    my @ports = ();
+
+    $type = "any" if !defined($type);
+    my @intfs = ( Vyatta::Interface::get_interfaces() );
+    my $cfg   = new Vyatta::Config;
+    #
+    # Walk the list of interfaces seeing which ones are members of a
+    # switch or bridge group.
+    #
+    foreach my $intf (@intfs) {
+        my $name;
+
+        if ( $type eq "any" or $type eq "switch" ) {
+            $name = $cfg->returnValue("$intf->{path} switch-group switch");
+            if ( cfg_bridge_name_match( $brname, $name ) ) {
+                push @ports, $intf->{name};
+                next;
+            }
+        }
+
+        if ( $type eq "any" or $type eq "bridge" ) {
+            $name = $cfg->returnValue("$intf->{path} bridge-group bridge");
+            if ( cfg_bridge_name_match( $brname, $name ) ) {
+                push @ports, $intf->{name};
+                next;
+            }
+        }
+    }
+
+    my @sorted_ports = sort @ports;
+    return @sorted_ports;
+}
+
 sub port_name2no {
     my ($name) = @_;
 
@@ -172,13 +221,13 @@ sub port_name2no {
 }
 
 sub port_no2name {
-    my ($port_no) = @_;
+    my ($brname, $port_no) = @_;
 
     if ( ! defined($port_no) || $port_no eq '0' ) {
         return 'none';
     }
 
-    foreach my $name ( get_bridge_ports() ) {
+    foreach my $name ( get_bridge_ports($brname) ) {
         if ( -e "/sys/class/net/$name/brport/port_no" ) {
             my $num = read_file("/sys/class/net/$name/brport/port_no");
             chomp($num);
@@ -191,8 +240,8 @@ sub port_no2name {
 }
 
 sub port_string {
-    my ($port_no) = @_;
-    my $str = sprintf '%s (%d)', port_no2name($port_no), $port_no;
+    my ($brname, $port_no) = @_;
+    my $str = sprintf '%s (%d)', port_no2name($brname, $port_no), $port_no;
     return $str;
 }
 

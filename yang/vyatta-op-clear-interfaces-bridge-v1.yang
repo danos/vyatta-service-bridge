@@ -54,6 +54,11 @@ module vyatta-op-clear-interfaces-bridge-v1 {
 
 		Defines the top-level 'bridge' level under 'clear interfaces' for operational CLI";
 
+	revision 2019-08-21 {
+		description
+			"Ensure that the clear counters command runs with privileges. Use root
+			as the common owner of the generated brXX.stats files";
+	}
 	revision 2019-03-12 {
 		description "Initial version";
 	}
@@ -73,12 +78,14 @@ module vyatta-op-clear-interfaces-bridge-v1 {
 				opd:command counters {
 					opd:help "Clear interface counters for a given bridge interface";
 					opd:on-enter 'vyatta-show-interfaces.pl --action=clear --intf="$4"';
+					opd:privileged true;
 				}
 			}
 
 			opd:command counters {
 				opd:help "Clear all bridge interface counters";
 				opd:on-enter 'vyatta-show-interfaces.pl --action=clear --intf-type="$3"';
+				opd:privileged true;
 			}
 		}
 	}

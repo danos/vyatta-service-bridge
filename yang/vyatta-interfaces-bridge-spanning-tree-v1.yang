@@ -77,6 +77,11 @@ module vyatta-interfaces-bridge-spanning-tree-v1 {
 		 The YANG module for vyatta-interfaces-bridge-spanning-tree-v1";
 
 
+	revision 2019-07-26 {
+		description
+			"Instead of individual updates for each STP attribute, invoke a
+			 'top-level' function to update all the attributes";
+	}
 	revision 2019-03-21 {
 		description
 			"Update port configuration to include filter and guard options
@@ -269,6 +274,7 @@ module vyatta-interfaces-bridge-spanning-tree-v1 {
 			configd:help "Spanning Tree configuration";
 			configd:create "vyatta-bridge-stp --bridge=$VAR(../@) --action=create";
 			configd:delete "vyatta-bridge-stp --bridge=$VAR(../@) --action=delete";
+			configd:update "vyatta-bridge-stp --bridge=$VAR(../@) --action=update_bridge";
 			must "2 * (forwarding-delay - 1) >= max-age" {
 				error-message "Bridge timers don't meet 2 * (Bridge Forward Delay - 1 second) >= Bridge Max Age";
 			}
@@ -280,7 +286,6 @@ module vyatta-interfaces-bridge-spanning-tree-v1 {
 				default "15";
 				description "Forwarding delay in seconds.";
 				configd:help "Forwarding delay in seconds";
-				configd:update "vyatta-bridge-stp --bridge=$VAR(../../@) --action=set_fwddly --val=$VAR(@)";
 			}
 			leaf hello-time {
 				type uint8 {
@@ -289,7 +294,6 @@ module vyatta-interfaces-bridge-spanning-tree-v1 {
 				default "2";
 				description "Hello packet advertisement interval in seconds.";
 				configd:help "Hello packet advertisement interval in seconds";
-				configd:update "vyatta-bridge-stp --bridge=$VAR(../../@) --action=set_hello --val=$VAR(@)";
 			}
 			leaf max-age {
 				type uint8 {
@@ -298,7 +302,6 @@ module vyatta-interfaces-bridge-spanning-tree-v1 {
 				configd:help "Interval in seconds at which neighbor bridges are removed";
 				default "20";
 				description "Interval in seconds at which neighbor bridges are removed.";
-				configd:update "vyatta-bridge-stp --bridge=$VAR(../../@) --action=set_maxage --val=$VAR(@)";
 			}
 			leaf priority {
 				type stp-bridge-priority;
@@ -314,7 +317,6 @@ module vyatta-interfaces-bridge-spanning-tree-v1 {
 
 					Alternatively a 'shorthand value' may be entered, a number
 					in the range 0..15.";
-				configd:update "vyatta-bridge-stp --bridge=$VAR(../../@) --action=set_priority --val=$VAR(@)";
 			}
 		}
 	}

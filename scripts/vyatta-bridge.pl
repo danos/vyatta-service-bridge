@@ -29,7 +29,6 @@ use lib '/opt/vyatta/share/perl5/';
 use File::Slurp qw( write_file );
 use Vyatta::Interface;
 use Vyatta::Config;
-use Vyatta::Bridge qw(get_bridge_ports);
 
 our $VERSION = 1.00;
 
@@ -67,8 +66,6 @@ if ( !defined $oldbridge ) {
 "Error: can not add interface $ifname that is part of bond-group to bridge\n";
     }
 
-    check_bridge_members( $newbridge );
-
     my @address = $cfg->returnValues('address');
     if (@address) {
         die "Error: Can not add interface $ifname with addresses to bridge\n";
@@ -91,15 +88,7 @@ if ( !defined $newbridge ) {
     exit 0;
 }
 
-if ( $oldbridge eq $newbridge ) {
-    printf "Updating interface $ifname on $oldbridge\n";
-    update_bridge_port( $newbridge, $ifname );
-    exit 0;
-}
-
 if ( $oldbridge ne $newbridge ) {
-    check_bridge_members( $newbridge );
-
     printf "Moving interface $ifname from $oldbridge to $newbridge\n";
     remove_bridge_port( $oldbridge, $ifname );
     add_bridge_port( $newbridge, $ifname );
@@ -111,42 +100,6 @@ exit 0;
 #
 # Subroutines
 #
-
-sub check_bridge_members {
-    my $bridge = shift;
-
-    if ( $bridge =~ /^br/ ) {
-        # a (non-virtual) bridge should have all its
-        # dataplane members on the same dataplane
-        if ( $intf->type() eq 'dataplane' ) {
-            foreach my $port ( get_bridge_ports($bridge) ) {
-                my $existing = new Vyatta::Interface($port);
-                next unless ( $existing->type() eq 'dataplane' );
-
-                last if ( $intf->dpid() eq $existing->dpid() );
-                die "Error: Cannot use bridge between different dataplanes\n";
-            }
-        }
-    }
-}
-
-# One or more bridge port parameters have been update
-sub update_bridge_port {
-    my ( $bridge, $port ) = @_;
-
-    my $rv = system
-      "vyatta-bridge-stp --action=update_port --bridge=$bridge --port=$port";
-    return $rv;
-}
-
-# Set bridge port parameters for a new port
-sub new_bridge_port {
-    my ( $bridge, $port ) = @_;
-
-    my $rv = system
-      "vyatta-bridge-stp --action=new_port --bridge=$bridge --port=$port";
-    return $rv;
-}
 
 sub add_bridge_port_bridge_macs {
     my ( $bridge, $port ) = @_;
@@ -182,7 +135,6 @@ sub add_bridge_port {
       or exit 1;
 
     add_bridge_port_bridge_macs( $bridge, $port );
-    new_bridge_port( $bridge, $port );
     system("/opt/vyatta/sbin/vyatta-ipv6-disable", "create", "$port");
     return;
 }

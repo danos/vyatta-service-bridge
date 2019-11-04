@@ -3,7 +3,9 @@
 # Module: vyatta-bridge-ports
 #
 # **** License ****
-# Copyright (c) 2019, AT&T Intellectual Property. All rights reserved.
+# Copyright (c) 2017-2019, AT&T Intellectual Property.
+# All rights reserved.
+#
 # Copyright (c) 2015 by Brocade Communications Systems, Inc.
 # All rights reserved.
 #
@@ -23,7 +25,8 @@ use warnings;
 
 use lib '/opt/vyatta/share/perl5/';
 
-use Vyatta::Bridge qw(get_bridge_ports);
+use Vyatta::SwitchConfig qw(get_default_switchports get_physical_switches);
+use Vyatta::Bridge qw(get_cfg_bridge_ports is_switch);
 use Getopt::Long;
 
 our $VERSION = 1.00;
@@ -58,8 +61,24 @@ exit 0;
 #
 sub show_ports {
     my ($bridge) = @_;
-    my @ports = get_bridge_ports($bridge);
 
-    printf join( $SPACE, @ports ), "\n";
-    return;
+    #
+    # First construct a list of implicitly defined switch ports
+    #
+    my @ports = ();
+    if ( !defined($bridge) ) {
+        @ports = get_default_switchports();
+    } elsif ( is_switch($bridge) ) {
+        foreach my $swid ( get_physical_switches() ) {
+            if ( $bridge eq "sw$swid" ) {
+                @ports = get_default_switchports();
+                last;
+            }
+        }
+    }
+    #
+    # Now add any explicitly defined bridge or switch ports
+    #
+    @ports = ( @ports, get_cfg_bridge_ports( "any", $bridge ) );
+    print join( $SPACE, @ports ) . "\n";
 }

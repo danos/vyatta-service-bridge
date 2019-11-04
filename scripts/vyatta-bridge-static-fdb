@@ -27,21 +27,29 @@ use JSON;
 use lib '/opt/vyatta/share/perl5/';
 
 use Vyatta::Configd;
+use Vyatta::SwitchConfig qw(get_default_switchports get_physical_switches);
+use Vyatta::Bridge qw(get_cfg_bridge_ports);
+use Vyatta::Interface;
 use Getopt::Long;
 
 our $VERSION = 1.00;
 
-my @end;
-
+my $action;
+my $addr;
 my $verbose;
 
 GetOptions(
+    'action=s' => \$action,
+    'mac=s'    => \$addr,
     'verbose'  => \$verbose,
 ) or usage();
 
-usage() if scalar @ARGV != 1;
-
-end_bridge_fdb(@ARGV);
+usage() unless defined($addr);
+if ( $action eq "validate" ) {
+    check_bridge_fdb($addr);
+} elsif ( $action eq "update" ) {
+    end_bridge_fdb($addr);
+}
 
 exit 0;
 
@@ -50,10 +58,109 @@ exit 0;
 #
 
 sub usage {
-    printf(
-"Usage:  vyatta-bridge-static-fdb <hwaddr> [--verbose]\n"
-    );
+    printf("Usage for vyatta-bridge-static-fdb\n");
+    printf("  --action=update --mac=<hwaddr> [--verbose]\n");
+    printf("  --action=validate --mac=<hwaddr> [--verbose]\n");
     exit 1;
+}
+
+#
+# Check for a valid VLAN ID. Ensure that the supplied switch port is a
+# member of the defined VLAN, i.e. is the VLAN ID one of the VLANs
+# listed in the switch-group or one of the default VLANs listed in the
+# switch.
+#
+sub check_vlan {
+    my ( $ifname, $ifpath, $vid, $cfg ) = @_;
+
+    my $path   = "$ifpath switch-group";
+    my $swname = $cfg->returnValue( $path . " switch" );
+    $path .= " port-parameters vlan-parameters";
+
+    my $pvid = $cfg->returnValue( $path . " primary-vlan-id" );
+    return 1 if defined($pvid) and $pvid == $vid;
+
+    my @vlans = $cfg->returnValues( $path . " vlans" );
+    return 1 if ( grep { $_ == $vid } @vlans );
+
+    my @switches = ();
+    if ( defined($swname) ) {
+        @switches = ($swname);
+    } else {
+        #
+        # No explicit switch-port configuration, assume the port is an
+        # implicit member of the hardware switch(es)
+        #
+        foreach my $swid ( get_physical_switches() ) {
+            push @switches, "sw$swid";
+        }
+    }
+
+    foreach $swname (@switches) {
+        $path =
+          "interfaces switch $swname default-port-parameters vlan-parameters";
+        $pvid = $cfg->returnValue( $path . " primary-vlan-id" );
+        return 1 if defined($pvid) and $pvid == $vid;
+
+        @vlans = $cfg->returnValues( $path . " vlans" );
+        return 1 if ( grep { $_ == $vid } @vlans );
+    }
+
+    return 0;
+}
+
+#
+# Figure out if the interface is a switch or bridge group member.
+#
+sub get_port_type {
+    my ($ifname) = @_;
+
+    my @ports = get_cfg_bridge_ports("bridge");
+    return "bridge" if ( grep { $_ eq $ifname } (@ports) );
+
+    #
+    # On a switch platform check the list of implicitly and explicitly
+    # defined ports
+    #
+    @ports = get_cfg_bridge_ports("switch");
+    my @defswports = get_default_switchports();
+    return "switch" if ( grep { $_ eq $ifname } ( @ports, @defswports ) );
+    return undef;
+}
+
+sub check_bridge_fdb {
+    my ($hwaddr) = @_;
+
+    my $path   = "protocols static bridge-mac $hwaddr";
+    my $cfg    = new Vyatta::Config;
+    my $ifname = $cfg->returnValue( $path . " interface" );
+    my $vlanid = $cfg->returnValue( $path . " vlan" );
+    #
+    # Mandatory attribute so the name should always exist... but is it
+    # a genuine interface?
+    #
+    return unless defined($ifname);
+    my $intf = Vyatta::Interface->new($ifname);
+    die "Interface \"$ifname\" does not exist\n"
+      unless $intf && $intf->exists();
+
+    my $porttype = get_port_type($ifname);
+    die "Interface \"$ifname\" is not a bridge or switch port\n"
+      if !defined($porttype);
+
+    if ( $porttype eq "bridge" ) {
+        die "VLAN \"$vlanid\" not valid for bridge port \"$ifname\"\n"
+          if defined($vlanid);
+        return;
+    }
+
+    if ( $porttype eq "switch" ) {
+        die "VLAN required for switch port \"$ifname\"\n"
+          if !defined($vlanid);
+
+        die "Interface \"$ifname\" is not a member of VLAN \"$vlanid\"\n"
+          if !check_vlan( $ifname, $intf->{path}, $vlanid, $cfg );
+    }
 }
 
 sub delete_bridge_fdb {

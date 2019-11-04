@@ -1,3 +1,4 @@
+scripts/0565-vyatta-interfaces-bridge opt/vyatta/share/vyatta-op/functions/tech-support.d
 scripts/vyatta-bridge-op opt/vyatta/bin
 scripts/vyatta-bridge-get-fdb opt/vyatta/bin
 scripts/vyatta-bridge-stp-op opt/vyatta/bin

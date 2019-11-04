@@ -41,7 +41,7 @@ module vyatta-interfaces-bridge-rstp-v1 {
 		 Web: www.att.com";
 
 	description
-		"Copyright (c) 2017-2018, AT&T Intellectual Property.
+		"Copyright (c) 2017-2019, AT&T Intellectual Property.
 		 All rights reserved.
 
 		 Copyright (c) 2015-2016 by Brocade Communications Systems, Inc.
@@ -78,6 +78,11 @@ module vyatta-interfaces-bridge-rstp-v1 {
 
 		 The YANG module for vyatta-interfaces-bridge-rstp-v1.";
 
+	revision 2019-07-26 {
+		description
+			"Eliminated updates for each STP attribute, the 'top-level' update
+			 bridge function takes care of all attributes";
+	}
 	revision 2018-04-17 {
 		description
 			"Add documentation to spanning-tree version enumeration and add mstp to
@@ -172,7 +177,6 @@ directly to the forwarding state.";
 			default "6";
 			description "Maximum number of BPDUs transmitted during hello-time period.";
 			configd:help "Maximum number of BPDUs transmitted during hello-time period";
-			configd:update "vyatta-bridge-stp --bridge=$VAR(../../@) --action=set_txhold --val=$VAR(@)";
 		}
 		leaf version {
 			type enumeration {
@@ -193,7 +197,6 @@ directly to the forwarding state.";
 			default "rstp";
 			description "Spanning Tree version.  If rstp (802.1w) is configured the
  operational version will revert to stp (802.1d) if an stp BPDU is received.";
-			configd:update "vyatta-bridge-stp --bridge=$VAR(../../@) --action=set_version --val=$VAR(@)";
 		}
 	}
 

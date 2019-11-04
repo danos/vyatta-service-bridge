@@ -269,9 +269,11 @@ sub get_default_params {
         dsgn_regional_root => $bridge_id,
         dsgn_root          => $bridge_id,
         enabled            => $enabled,
+        exists             => 1,
         ext_cost           => $ext_cost,
         hello_time         => $BRIDGE_HELLO_TIME,
         int_cost           => compute_port_path_cost($port_name),
+        mstpdattrs         => 0,
         network_port       => $network_port,
         num_rx_bpdu_filtered => 0,
         num_rx_bpdu        => 0,
@@ -374,6 +376,10 @@ sub get_params_mstpctl {
 
     $params{bridge_name} = $bridge_name;
     $params{port_name}   = $port_name;
+    if (!defined($cmdout)) {
+	$params{exists} = 0;
+	return \%params;
+    }
 
     $params{enabled} = 0;
     if ( $cmdout =~ /enabled \s+ (\S+)/msx ) {
@@ -525,6 +531,8 @@ sub get_params_mstpctl {
     }
 
     $params{mstp} = get_mstp( $bridge_name, $port_name );
+    $params{exists} = 1;
+    $params{mstpdattrs} = 1;
 
     return \%params;
 }
@@ -885,7 +893,7 @@ sub show_1_spanning_tree_port_status {
 }
 
 sub show_1_spanning_tree_port_brief {
-    my ( $port, $show_header, $is_switch, $is_mstp ) = @_;
+    my ( $brname, $port, $show_header, $is_switch, $is_mstp ) = @_;
 
     my $brief_fmt;
 
@@ -940,9 +948,10 @@ sub show_1_spanning_tree_port_brief {
         $rolestr = role2str_short( $str2role_hash{ $port->{'role'} } );
     }
 
+    my $portid = port_string( $brname, $port->{'port-no'} );
     if ( !$is_mstp ) {
         printf $brief_fmt,
-          port_string( $port->{'port-no'} ),
+          $portid,
           $port->{'enabled'} ? $port->{'port-state'} : 'down',
           $rolestr,
           $port->{'port-cost'},
@@ -951,7 +960,7 @@ sub show_1_spanning_tree_port_brief {
           $rcvd_bpdu;
     } else {
         printf $brief_fmt,
-          port_string( $port->{'port-no'} ), '-',
+          $portid, '-',
           $port->{'enabled'} ? $port->{'port-state'} : 'down',
           $rolestr,
           $port->{'port-cost'},
@@ -966,8 +975,8 @@ sub show_1_spanning_tree_port {
     my ( $brname, $port, $show_header, $format, $is_switch, $is_mstp ) = @_;
 
     if ( $format eq "brief" ) {
-        show_1_spanning_tree_port_brief( $port, $show_header, $is_switch,
-            $is_mstp );
+        show_1_spanning_tree_port_brief( $brname, $port, $show_header,
+            $is_switch, $is_mstp );
         return;
     }
 
@@ -986,7 +995,7 @@ sub show_1_spanning_tree_port {
     # This mimicks exactly the output of
     # "mstpctl showportdetail <bridge> <port>"
     #
-    printf "%s:%s\n", $brname, port_string( $port->{'port-no'} );
+    printf "%s:%s\n", $brname, port_string( $brname, $port->{'port-no'} );
 
     printf $fmt1, 'link enabled', yesno( $port->{'enabled'} );
     printf $fmt2, 'role',         $port->{'role'};
@@ -1133,11 +1142,26 @@ sub compute_port_path_cost {
     return $cost;
 }
 
+#
+# If the attributes were collected from the MSTP daemon (as opposed to
+# the locally defined defaults) and the proposed attribute value
+# hasn't changed, don't bother to "crank the handle".
+#
+sub param_no_change {
+    my ( $port, $key, $value ) = @_;
+
+    return
+         $port->{'mstpdattrs'}
+      && defined($key)
+      && ( $port->{$key} eq $value );
+}
+
 sub mstpctl_set_param {
-    my ( $port, $key, $value, $msti ) = @_;
+    my ( $port, $pkey, $key, $value, $msti ) = @_;
     my $rv = 0;
 
-    if ( $port->{'exists'} && defined($value) ) {
+    if ( $port->{'exists'} && defined($value) &&
+         !param_no_change($port, $pkey, $value)) {
         my $bname  = $port->{'bridge_name'};
         my $pname  = $port->{'port_name'};
         my $debug  = $port->{'debug'};
@@ -1163,76 +1187,81 @@ sub set_priority {
 
     if ( defined($prio) ) {
         $prio = $prio / $BRPORTPRI_MULTIPLIER unless $prio < 16;
+        return 0 if param_no_change($self, "priority", $prio);
     }
 
-    return mstpctl_set_param( $self, "settreeportprio", $prio, 0 );
+    return mstpctl_set_param( $self, undef, "settreeportprio", $prio, 0 );
 }
 
 sub set_path_cost {
     my ( $self, $cost ) = @_;
 
-    $cost = 0 if ( $cost && ( $cost eq 'auto' ) );
-    return mstpctl_set_param( $self, "setportpathcost", $cost );
+    if ( defined($cost) ) {
+        return 0 if param_no_change( $self, "admin_ext_cost", $cost );
+        $cost = 0 if $cost eq 'auto';
+    }
+
+    return mstpctl_set_param( $self, undef, "setportpathcost", $cost );
 }
 
 sub set_root_block {
     my ( $self, $state ) = @_;
 
-    return mstpctl_set_param( $self, "setportrestrrole", yesno($state) );
+    return mstpctl_set_param( $self, "root_block", "setportrestrrole", yesno($state) );
 }
 
 sub set_bpdu_guard {
     my ( $self, $state ) = @_;
 
-    return mstpctl_set_param( $self, "setbpduguard", yesno($state) );
+    return mstpctl_set_param( $self, "bpdu_guard_port", "setbpduguard", yesno($state) );
 }
 
 sub set_pvst_guard {
     my ( $self, $state ) = @_;
 
-    return mstpctl_set_param( $self, "setpvstguard", yesno($state) );
+    return mstpctl_set_param( $self, "pvst_guard_port", "setpvstguard", yesno($state) );
 }
 
 sub set_bpdu_filter {
     my ( $self, $state ) = @_;
 
-    return mstpctl_set_param( $self, "setportbpdufilter", yesno($state) );
+    return mstpctl_set_param( $self, "bpdu_filter_port", "setportbpdufilter", yesno($state) );
 }
 
 sub set_pvst_filter {
     my ( $self, $state ) = @_;
 
-    return mstpctl_set_param( $self, "setportpvstfilter", yesno($state) );
+    return mstpctl_set_param( $self, "pvst_filter_port", "setportpvstfilter", yesno($state) );
 }
 
 sub set_admin_edge {
     my ( $self, $state ) = @_;
 
-    return mstpctl_set_param( $self, "setportadminedge", yesno($state) );
+    return mstpctl_set_param( $self, "admin_edge", "setportadminedge", yesno($state) );
 }
 
 sub set_auto_edge {
     my ( $self, $state ) = @_;
 
-    return mstpctl_set_param( $self, "setportautoedge", yesno($state) );
+    return mstpctl_set_param( $self, "auto_edge", "setportautoedge", yesno($state) );
 }
 
 sub set_restrict_tcn {
     my ( $self, $state ) = @_;
 
-    return mstpctl_set_param( $self, "setportrestrtcn", yesno($state) );
+    return mstpctl_set_param( $self, "rstr_tcn", "setportrestrtcn", yesno($state) );
 }
 
 sub set_network_port {
     my ( $self, $state ) = @_;
 
-    return mstpctl_set_param( $self, "setportnetwork", yesno($state) );
+    return mstpctl_set_param( $self, "network_port", "setportnetwork", yesno($state) );
 }
 
 sub set_p2p_detection {
     my ( $self, $val ) = @_;
 
-    return mstpctl_set_param( $self, "setportp2p", $val );
+    return mstpctl_set_param( $self, "admin_p2p", "setportp2p", $val );
 }
 
 sub mstp_msti_set_priority {
@@ -1242,14 +1271,14 @@ sub mstp_msti_set_priority {
         $prio = $prio / $BRPORTPRI_MULTIPLIER unless $prio < 16;
     }
 
-    return mstpctl_set_param( $self, "settreeportprio", $prio, $mstid );
+    return mstpctl_set_param( $self, undef, "settreeportprio", $prio, $mstid );
 }
 
 sub mstp_msti_set_path_cost {
     my ( $self, $mstid, $cost ) = @_;
 
     $cost = 0 if ( $cost && ( $cost eq 'auto' ) );
-    return mstpctl_set_param( $self, "settreeportcost", $cost, $mstid );
+    return mstpctl_set_param( $self, undef, "settreeportcost", $cost, $mstid );
 }
 
 1;

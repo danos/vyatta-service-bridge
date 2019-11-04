@@ -22,7 +22,7 @@ module vyatta-bridge-static-fdb-v1 {
 		 Web: www.att.com";
 
 	description
-		"Copyright (c) 2018, AT&T Intellectual Property.
+		"Copyright (c) 2018-2019, AT&T Intellectual Property.
 		 All rights reserved.
 
 		 Copyright (c) 2015-2016 by Brocade Communications Systems, Inc.
@@ -59,6 +59,17 @@ module vyatta-bridge-static-fdb-v1 {
 
 		 The YANG module for vyatta-bridge-static-fdb-v1";
 
+	revision 2019-09-10 {
+		description
+			"Add interface and VLAN validation:
+			    o Ensure the interface name is a configured bridge or
+			      switch port interface
+
+			    o Ensure the VLAN ID is a configured VLAN and that the
+			      interface is a switch-port that is a member of that
+			      VLAN
+			";
+	}
 	revision 2018-04-11 {
 		description
 			"Update configd:end script options. Only pass mac as argument.";
@@ -75,20 +86,25 @@ module vyatta-bridge-static-fdb-v1 {
 		list bridge-mac {
 			description "Static entry in bridge forwarding database.";
 			configd:help "Static entry in bridge forwarding database";
-			configd:end "vyatta-bridge-static-fdb $VAR(@)";
+			configd:validate "vyatta-bridge-static-fdb --action=validate --mac=$VAR(@)";
+			configd:end "vyatta-bridge-static-fdb --action=update --mac=$VAR(@)";
 			key "mac";
 			leaf mac {
 				type types:mac-address;
-				description "MAC address for bridge FDB static entry.";
-				configd:help "MAC address for bridge FDB static entry";
+				description "MAC address for bridge or switch FDB static entry.";
+				configd:help "MAC address for bridge or switch FDB static entry";
 			}
 			leaf interface {
 				type string {
 					length "2..256";
 				}
 				mandatory true;
-				description "Interface for the bridge FDB static entry.";
-				configd:help "Interface for the bridge FDB static entry";
+				description
+					"Interface for the bridge or switch FDB static entry. The interface
+					 must be a member of a bridge-group or a member of
+					 a switch-group. In the case of a switch-group
+					 member a VLAN ID is also required.";
+				configd:help "Interface for the bridge or switch FDB static entry";
 				configd:allowed "vyatta-bridge-ports --show-ports";
 			}
 			leaf vlan {
@@ -97,7 +113,10 @@ module vyatta-bridge-static-fdb-v1 {
 				}
 				description
 					"VLAN for the bridge FDB static entry. When using VLAN-aware bridges,
-					 switches, it is necessary to specify the target VLAN for the entry.";
+					 (switches), it is necessary to specify the target
+					 VLAN for the entry. Further the above
+					 (switch-port) interface must be a member of that
+					 VLAN.";
 				configd:help "VLAN for the switch (VLAN-aware bridge) FDB static entry.";
 				must "not(contains(../interface, '.'))" {
 					error-message "VIF interfaces cannot be members of a switch";
