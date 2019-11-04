@@ -1,0 +1,44 @@
+#!/usr/bin/perl
+#
+# Copyright (c) 2019, AT&T Intellectual Property.
+# All rights reserved.
+#
+# SPDX-License-Identifier: GPL-2.0-only
+#
+use strict;
+use warnings;
+
+use lib '/opt/vyatta/share/perl5/';
+
+use Vyatta::SpanningTreeBridge;
+use Vyatta::SpanningTreePort;
+use Vyatta::FDB qw(fdb_collect);
+
+use File::Slurp qw(read_dir);
+use JSON;
+
+my %root;
+my @bridges = ();
+
+$root{'bridges'} = \@bridges;
+
+my (@bridge_names) = grep { /^br\d+$/ } read_dir('/sys/class/net');
+
+foreach my $brname (@bridge_names) {
+    my $bridge      = Vyatta::SpanningTreeBridge->new($brname);
+    my %bridge_info = %{ $bridge->state() };
+    my @interfaces  = ();
+    my $fdb         = fdb_collect($brname);
+
+    $bridge_info{'interfaces'} = \@interfaces;
+    foreach my $pname ( read_dir("/sys/class/net/$brname/brif") ) {
+        my $port = Vyatta::SpanningTreePort->new( $brname, $pname );
+        my %port_info = %{ $port->state( $bridge, $fdb, 0 ) };
+        push @interfaces, \%port_info;
+    }
+
+    push @bridges, \%bridge_info;
+}
+
+my $json = encode_json( \%root );
+print $json;

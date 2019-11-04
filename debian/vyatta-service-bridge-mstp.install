@@ -1,0 +1,1 @@
+scripts/vyatta-bridge-reload-stp opt/vyatta/sbin

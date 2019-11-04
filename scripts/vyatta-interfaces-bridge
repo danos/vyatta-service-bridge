@@ -1,0 +1,158 @@
+#! /usr/bin/perl
+#
+# Module: vyatta-interfaces-bridge
+#
+# **** License ****
+# Copyright (c) 2019, AT&T Intellectual Property.
+# Copyright (c) 2010-2015 by Brocade Communications Systems, Inc.
+# All rights reserved.
+#
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# **** End License ****
+#
+# Non-spanning tree bridge interface configuration
+#
+
+use strict;
+use warnings;
+
+use lib '/opt/vyatta/share/perl5/';
+
+use File::Slurp qw( read_file );
+use Vyatta::Config;
+use Vyatta::Bridge;
+use Getopt::Long;
+
+our $VERSION = 1.00;
+
+my $BRCTL   = '/sbin/brctl';
+my $MSTPCTL = '/sbin/mstpctl';
+
+#
+# main
+#
+
+my ( $action, $opt_bridge, $opt_val );
+
+sub usage {
+    printf "Usage for vyatta-interfaces-bridge\n";
+    printf "  --action={set_ageing} --bridge=<bridge>\n";
+    exit 1;
+}
+
+GetOptions(
+    'action=s' => \$action,
+    'bridge=s' => \$opt_bridge,
+    'val=s'    => \$opt_val,
+) or usage();
+
+if ( $action eq 'set_ageing' ) {
+    set_bridge_ageing( $opt_bridge, $opt_val );
+}
+
+if ( $action eq 'set_mac' ) {
+    set_bridge_mac( $opt_bridge, $opt_val );
+}
+
+if ( $action eq 'del_mac' ) {
+    del_bridge_mac( $opt_bridge );
+}
+
+if ( $action eq 'set_multicast_router' ) {
+    set_bridge_multicast_routing( $opt_bridge );
+}
+
+if ( $action eq 'del_multicast_router' ) {
+    del_bridge_multicast_routing( $opt_bridge );
+}
+
+exit 0;
+
+#
+# subroutines
+#
+
+sub set_bridge_ageing {
+    my ( $bridge, $age ) = @_;
+    my $rv = 0;
+
+    $rv = system "$BRCTL setageing $bridge $age";
+    return $rv;
+}
+
+# Generate random MAC address that starts with '02'. This ensures
+# it is a locally administered (wont clash with a hardware MAC) unicast
+# address.
+sub random_mac {
+    my @chars = ( "a" .. "f", "0" .. "9");
+    my $mac = join("", @chars[ map { rand @chars } ( 1 .. 10 ) ]);
+    $mac =~ s/(..)/$1:/g;
+    chop $mac;
+    $mac = '02:' . $mac;
+    return $mac;
+}
+
+sub set_bridge_mac {
+    my ( $bridge_name, $mac ) = @_;
+    my $rv = 0;
+
+    my $bridge = Vyatta::Bridge->new( $bridge_name );
+
+    if ( $bridge->{mac} ne $mac ) {
+        $rv = system "ip link set $bridge_name address $mac";
+    }
+    return $rv;
+}
+
+sub set_bridge_multicast_routing {
+    my ( $bridge_name) = @_;
+    my $rv = 0;
+
+    # value 2 sets the bridge as a permanent multicast router
+    $rv = system "ip", "link", "set", "$bridge_name", "type", "bridge", "mcast_router", "2";
+
+    return $rv;
+}
+
+sub del_bridge_multicast_routing {
+    my ( $bridge_name) = @_;
+    my $rv = 0;
+
+    # value 1 sets bridge into default multicast snooping mode
+    $rv = system "ip", "link", "set", "$bridge_name", "type", "bridge", "mcast_router", "1";
+
+    return $rv;
+}
+
+sub del_bridge_mac {
+    my ( $bridge_name ) = @_;
+    my $rv = 0;
+    my $mac = 'FF:FF:FF:FF:FF:FF';
+    my $bridge = Vyatta::Bridge->new( $bridge_name );
+
+    #
+    # Find the lowest numerical MAC address amongst the bridge member
+    # interfaces
+    #
+    foreach my $port_name ( @{ $bridge->{port_list} } ) {
+        my $port_mac = read_file("/sys/class/net/$port_name/address");
+        if ($port_mac) {
+            my $cv = $port_mac cmp $mac ;
+            if ( $cv < 0 ) {
+                $mac = $port_mac;
+            }
+        }
+    }
+
+    # If no suitable MAC address was found from the member interfaces
+    # then set it to a random value
+    if ( $mac eq 'FF:FF:FF:FF:FF:FF' ) {
+        $mac = random_mac();
+    }
+
+    if ( $bridge->{mac} ne $mac ) {
+        $rv = system "ip link set $bridge_name address $mac";
+    }
+    return $rv;
+}

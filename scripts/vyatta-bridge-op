@@ -1,0 +1,216 @@
+#! /usr/bin/perl
+#
+# Copyright (c) 2019, AT&T Intellectual Property.
+# All rights reserved.
+#
+# Copyright (c) 2010-2015, Brocade Communications Systems, Inc.
+# All rights reserved.
+#
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# Op mode commands for the "show bridge <bridge> ..."
+# command, excluding "show bridge <bridge> spanning-tree ...".
+#
+
+use strict;
+use warnings;
+use Readonly;
+
+use lib '/opt/vyatta/share/perl5/';
+
+use Vyatta::Configd;
+use Vyatta::Dataplane;
+use Getopt::Long;
+use JSON qw( decode_json );
+use Vyatta::MAC;
+use Vyatta::Bridge qw(show_bridge port_name2no);
+use Vyatta::FDB qw(fdb_collect);
+
+#use Data::Dumper;
+
+our $VERSION = 1.00;
+
+my ( $action, $opt_bridge, $opt_port, $opt_mac_str, $opt_brief );
+
+$opt_bridge = '';
+$opt_port   = '';
+$opt_brief  = 0;
+
+Readonly my $MINUS_ONE => -1;
+Readonly my $PLUS_ONE  => 1;
+
+sub usage {
+    printf("Usage for vyatta-bridge-op\n");
+    printf("  --action=show_bridge [--bridge=<bridge>]\n");
+    printf(
+        "  --action=show_macs --bridge=<bridge> [--port=<port>] [--mac=<mac>]\n"
+    );
+    printf("  --action=clear_macs --bridge=<bridge> [--port=<port>]\n");
+    exit 1;
+}
+
+GetOptions(
+    'action=s' => \$action,
+    'bridge=s' => \$opt_bridge,
+    'port=s'   => \$opt_port,
+    'mac=s'    => \$opt_mac_str,
+    'brief'    => \$opt_brief,
+) or usage();
+
+usage() unless defined($action);
+
+if ( $action eq 'show_bridge' ) {
+    action_show_bridge($opt_bridge);
+}
+if ( $action eq 'show_macs' ) {
+    action_show_macs( $opt_bridge, $opt_port, $opt_mac_str );
+}
+if ( $action eq 'clear_macs' ) {
+    action_clear_macs( $opt_bridge, $opt_port, $opt_mac_str );
+}
+
+exit 0;
+
+#
+# subroutines
+#
+
+#
+# "show bridge [<name>]
+#
+sub action_show_bridge {
+    my ($bridge_name) = @_;
+
+    show_bridge( $bridge_name, 0 );
+}
+
+#
+# Check if MAC is valid.  If it is, then return the MAC address in IEEE
+# format (52:54:00:00:01:02), else return undef.
+#
+sub validate_mac {
+    my ( $mac_str, $verbose ) = @_;
+
+    if ( !defined $mac_str ) {
+        return;
+    }
+
+    my $mac = Vyatta::MAC->new( 'mac' => $mac_str, 'die' => 0, 'verbose' => 0 );
+    my $error = $mac->get_error();
+    if ($error) {
+        if ($verbose) {
+            printf("$error");
+        }
+        return;
+    }
+    return $mac->as_IEEE();
+}
+
+sub bridge_mac_type_string {
+    my $entry = shift;
+
+    if ( $entry->{'state'} eq 'reachable' ) {
+        return 'dynamic';
+    }
+    if ( $entry->{'state'} eq 'static' ) {
+        return 'static';
+    }
+    if ( $entry->{'state'} eq 'permanent' ) {
+        return 'local';
+    }
+    return q{-};
+}
+
+#
+# Permanent or static entries are aged from when they are created.
+# Don't show this since it is potentially confusing.
+#
+sub age {
+    my ($entry) = @_;
+
+    return '-'
+      if $entry->{'state'} eq 'permanent'
+      or $entry->{'state'} eq 'static';
+    return $entry->{updated};
+}
+
+#
+# "show bridge br0 macs ..."
+#
+sub action_show_macs {
+    my ( $bridge_name, $port_name, $mac_str ) = @_;
+
+    die "required bridge name is missing\n" unless defined($bridge_name);
+
+    my $fdb = fdb_collect($bridge_name);
+    my $mac;
+
+#    print "FDB: \n" . Dumper($fdb);
+    if ($mac_str) {
+        $mac_str = validate_mac( $mac_str, 1 );
+        return if not $mac_str;
+        $mac = Net::MAC->new( 'mac' => $mac_str, 'base' => 16 );
+    }
+
+    my $fmt = "%-18s %-23s %-15s %s\n";
+    printf( $fmt, 'Interface (port)', 'MAC Address', 'Type', 'Age' );
+
+    foreach my $pname ( sort( keys %{$fdb} ) ) {
+        next if $pname eq $bridge_name;
+        next if $port_name and $pname ne $port_name;
+
+        my $port = sprintf "%s (%d)", $pname, port_name2no($pname);
+
+        foreach my $entry ( @{ $fdb->{$pname} } ) {
+            next if defined($entry->{'vlan-id'});
+
+            my $entry_mac =
+              Net::MAC->new( 'mac' => $entry->{'mac'}, 'base' => 16 );
+
+            next if $mac and $entry_mac != $mac;
+
+            #
+            # For consistency only report the MAC address entries
+            # that are maintained by the dataplane. Ultimately the
+            # controller and dataplane entries need to be combined
+            # into a consolidated show command - something along
+            # the lines of "show arp".
+            #
+            next if $entry->{'source'} ne 'dataplane';
+
+            printf( $fmt,
+                $port, $entry_mac->get_mac(), bridge_mac_type_string($entry),
+                age($entry) );
+        }
+    }
+}
+
+#
+# "clear bridge br0 macs ..."
+#
+sub action_clear_macs {
+    my ( $bridge, $port, $mac_str ) = @_;
+
+    my $cmd = "bridge $bridge macs clear";
+
+    if ($port) {
+        $cmd .= ' port ' . $port;
+    }
+    if ($mac_str) {
+        #
+        # If a MAC address is specified, then the DP expect it to be in IEEE
+        # format, i.e. colon sepatated bytes.  validate_mac will return this
+        # format.
+        #
+        $mac_str = validate_mac( $mac_str, 1 );
+        if ( !$mac_str ) {
+            return;
+        }
+        $cmd .= ' mac ' . $mac_str;
+    }
+
+    my ( $dp_ids, $dp_conns, $local_controller ) =
+      Vyatta::Dataplane::setup_fabric_conns();
+    vplane_exec_cmd( $cmd, $dp_ids, $dp_conns, 1 );
+    return;
+}

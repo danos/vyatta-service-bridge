@@ -1,0 +1,134 @@
+#! /usr/bin/perl
+#
+# Copyright (c) 2018-2019, AT&T Intellectual Property.
+# All rights reserved.
+#
+# Copyright (c) 2010-2015, Brocade Communications Systems, Inc.
+# All rights reserved.
+#
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# Op mode commands for the "show bridge <bridge> spanning-tree ..."
+# command.
+#
+
+use strict;
+use warnings;
+
+use lib '/opt/vyatta/share/perl5/';
+
+use Getopt::Long;
+use Vyatta::Bridge qw(get_bridge_ports is_stp_cfgd);
+use Vyatta::SpanningTreeBridge qw(show_spanning_tree_bridge);
+use Vyatta::SpanningTreePort qw(show_spanning_tree_port);
+
+our $VERSION = 1.00;
+
+my $MSTPCTL = '/sbin/mstpctl';
+
+my ( $action, $opt_bridge, $opt_port, $opt_format );
+
+$opt_format = "full";
+$opt_bridge = '';
+$opt_port   = '';
+
+my $SPACE = q{ };
+
+sub usage {
+    printf("Usage for vyatta-bridge-stp-op\n");
+    printf("  --action=show_stp --bridge=<bridge> [--format={brief|status}]\n");
+    printf(
+"  --action=show_stp_bridge --bridge=<bridge> [--format={brief|status}]\n"
+    );
+    printf(
+"  --action=show_stp_port --bridge=<bridge> [--port=<port>] [--format={brief|status}]\n"
+    );
+    exit 1;
+}
+
+GetOptions(
+    'action=s' => \$action,
+    'bridge=s' => \$opt_bridge,
+    'port=s'   => \$opt_port,
+    'format=s' => \$opt_format,
+) or usage();
+
+usage() unless defined($action);
+
+if ( $action eq 'show_stp' ) {
+    action_show_stp( $opt_bridge, $opt_format );
+}
+if ( $action eq 'show_stp_bridge' ) {
+    action_show_stp_bridge( $opt_bridge, $opt_format );
+}
+if ( $action eq 'show_stp_port' ) {
+    action_show_stp_port( $opt_bridge, $opt_port, $opt_format );
+}
+if ( $action eq 'clear_vers' ) {
+    action_clear_version( $opt_bridge, $opt_port );
+}
+
+exit 0;
+
+#
+# "show bridge [<name>] spanning-tree [brief|status]
+#
+sub action_show_stp {
+    my ( $brname, $format ) = @_;
+
+    show_spanning_tree_bridge( $brname, 0, 1, $format );
+}
+
+#
+# "show bridge [<name>] spanning-tree bridge [brief|status]
+#
+sub action_show_stp_bridge {
+    my ( $brname, $format ) = @_;
+
+    show_spanning_tree_bridge( $brname, 0, 0, $format );
+}
+
+#
+# "show bridge [<name>] spanning-tree port [<port>] [brief|status]
+#
+sub action_show_stp_port {
+    my ( $brname, $pname, $format ) = @_;
+
+    show_spanning_tree_port( $brname, $pname, 0, $format );
+}
+
+#
+# "clear bridge [<name>] spanning-tree version [port <port>]
+#
+sub action_clear_version {
+    my ( $bridge, $port ) = @_;
+
+    if ($port) {
+        clear_version( $bridge, $port );
+    } else {
+        foreach my $port ( get_bridge_ports($bridge) ) {
+            clear_version( $bridge, $port );
+        }
+    }
+    return;
+}
+
+#
+# Try to get back from STP to RSTP mode
+#
+sub clear_version {
+    my ( $bridge_name, $port_name ) = @_;
+
+    my $bridge = Vyatta::SpanningTreeBridge->new($bridge_name);
+    my $port = Vyatta::SpanningTreePort->new( $bridge_name, $port_name );
+
+    die "Unknown or invalid interface \"$bridge_name\"\n"
+      unless $bridge->{'exists'};
+
+    die "Unknown or invalid port name \"$port_name\"\n"
+      unless $port->{'exists'};
+
+    if ( is_stp_cfgd($bridge_name) ) {
+        system($MSTPCTL, "portmcheck", $bridge_name, $port_name);
+    }
+}

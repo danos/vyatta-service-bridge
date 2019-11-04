@@ -1,0 +1,65 @@
+#!/usr/bin/perl
+#
+# Module: vyatta-bridge-ports
+#
+# **** License ****
+# Copyright (c) 2019, AT&T Intellectual Property. All rights reserved.
+# Copyright (c) 2015 by Brocade Communications Systems, Inc.
+# All rights reserved.
+#
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# **** End License ****
+#
+# Syntax:
+#    vyatta-bridge-ports [--bridge <bridge>] --show-ports
+#
+# Show all bridge ports, or just those ports for the specified bridge
+# interface.
+#
+
+use strict;
+use warnings;
+
+use lib '/opt/vyatta/share/perl5/';
+
+use Vyatta::Bridge qw(get_bridge_ports);
+use Getopt::Long;
+
+our $VERSION = 1.00;
+
+my $SPACE = q{ };
+my $opt_bridge;
+my $do_show_ports;
+
+sub usage {
+    printf("Usage: vyatta-bridge-ports [--bridge=<bridge>] --show-ports\n");
+    exit 1;
+}
+
+GetOptions(
+    'bridge=s'   => \$opt_bridge,
+    'show-ports' => \$do_show_ports,
+) or usage();
+
+if ($do_show_ports) {
+    show_ports($opt_bridge);
+}
+
+exit 0;
+
+#
+# Subroutines
+#
+
+#
+# Show all bridge ports for the given bridge-group if specified, else all bridge
+# ports on all bridge-groups
+#
+sub show_ports {
+    my ($bridge) = @_;
+    my @ports = get_bridge_ports($bridge);
+
+    printf join( $SPACE, @ports ), "\n";
+    return;
+}

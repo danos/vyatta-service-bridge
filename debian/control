@@ -1,0 +1,185 @@
+Source: vyatta-service-bridge
+Section: contrib/net
+Priority: optional
+Maintainer: Vyatta Package Maintainers <DL-vyatta-help@att.com>
+Build-Depends: debhelper (>= 9), pkg-config, dh-yang, dh-systemd
+Standards-Version: 3.9.6
+
+Package: vyatta-service-bridge
+Architecture: any
+Depends:
+ bridge-utils,
+ busybox,
+ libvyatta-bridge-perl (>= ${source:Version}),
+ vplane-config,
+ vplane-config-npf,
+ vyatta-cfg,
+ vyatta-interfaces (>= 0.5),
+ vyatta-intf-create,
+ ${misc:Depends},
+ ${perl:Depends}
+Description: Vyatta bridge configuration templates and scripts
+ Vyatta bridge CLI configuration and operational templates and scripts.
+
+Package: libvyatta-bridge-perl
+Architecture: any
+Replaces: vyatta-service-bridge (<< 1.15)
+Breaks: vyatta-service-bridge (<< 1.15)
+Provides: libvyatta-bridge-state-perl,
+	  libvyatta-bridge-show-status-perl
+Depends:
+ libfile-slurp-perl,
+ libnet-mac-perl,
+ libreadonly-perl,
+ libvyatta-interface-perl,
+ libvyatta-misc-perl,
+ mstpd (>=0.0.4~git20150916-0vyatta8),
+ mstpd-pvst-filter-support,
+ ${misc:Depends},
+ ${perl:Depends},
+ ${shlibs:Depends}
+Section: perl
+Description: Interface related perl modules
+ A collection of Interface related perl modules.
+
+Package: vyatta-service-bridge-mstp
+Architecture: all
+Depends:
+ vyatta-service-bridge (>= ${source:Version}),
+ mstpd,
+ ${misc:Depends},
+ ${perl:Depends},
+Section: contrib/admin
+Description: Support script for MSTP
+ The reload support script for the MSTP daemon together with the
+ associated service file
+
+Package: vyatta-interfaces-bridge-v1-yang
+Architecture: all
+Depends:
+ vyatta-service-bridge (>= ${source:Version}),
+ ${misc:Depends},
+ ${yang:Depends}
+Section: contrib/admin
+Description: vyatta-interfaces-bridge-v1 module
+ The YANG module for vyatta-interfaces-bridge-v1
+
+Package: vyatta-interfaces-bridge-state-v1-yang
+Architecture: all
+Depends:
+ vyatta-service-bridge (>= ${source:Version}),
+ libvyatta-bridge-state-perl,
+ ${misc:Depends},
+ ${yang:Depends}
+Section: contrib/admin
+Description: vyatta-interfaces-bridge-state-v1 module
+ The YANG module for vyatta-interfaces-bridge-state-v1
+ (shared operational state)
+
+Package: vyatta-interfaces-bridge-spanning-tree-v1-yang
+Architecture: all
+Depends:
+ vyatta-service-bridge (>= ${source:Version}),
+ vyatta-service-bridge-mstp,
+ ${misc:Depends},
+ ${yang:Depends}
+Section: contrib/admin
+Provides: vyatta-interfaces-bridge-spanning-tree-yang
+Conflicts: vyatta-interfaces-bridge-spanning-tree-yang
+Replaces: vyatta-interfaces-bridge-spanning-tree-yang
+Description: vyatta-interfaces-bridge-spanning-tree-v1 module
+ The YANG module for vyatta-interfaces-bridge-spanning-tree-v1
+
+Package: vyatta-interfaces-bridge-rstp-v1-yang
+Architecture: all
+Depends:
+ vyatta-service-bridge (>= ${source:Version}),
+ vyatta-interfaces-bridge-spanning-tree-v1-yang,
+ ${misc:Depends},
+ ${yang:Depends}
+Section: contrib/admin
+Provides: vyatta-interfaces-bridge-rstp-yang
+Conflicts: vyatta-interfaces-bridge-rstp-yang
+Replaces: vyatta-interfaces-bridge-rstp-yang
+Description: vyatta-interfaces-bridge-rstp-v1 module
+ The YANG module for vyatta-interfaces-bridge-rstp-v1
+
+Package: vyatta-interfaces-bridge-policy-v1-yang
+Architecture: all
+Depends:
+ vyatta-service-bridge (>= ${source:Version}),
+ ${misc:Depends},
+ ${yang:Depends}
+Section: contrib/admin
+Description: vyatta-interfaces-bridge-policy-v1 module
+ The YANG module for vyatta-interfaces-bridge-policy-v1
+
+Package: vyatta-bridge-static-fdb-v1-yang
+Architecture: all
+Depends:
+ vyatta-service-bridge (>= ${source:Version}),
+ ${misc:Depends},
+ ${yang:Depends}
+Section: contrib/admin
+Description: vyatta-bridge-static-fdb-v1 module
+ The YANG module for vyatta-bridge-static-fdb-v1
+
+Package: vyatta-interfaces-bridge-mstp-v1-yang
+Architecture: all
+Depends:
+ vyatta-service-bridge (>= ${source:Version}),
+ vyatta-interfaces-bridge-spanning-tree-v1-yang,
+ vyatta-interfaces-bridge-rstp-v1-yang,
+ ${misc:Depends},
+ ${yang:Depends}
+Section: contrib/admin
+Description: vyatta-interfaces-bridge-mstp-v1 module
+ The YANG module for vyatta-interfaces-bridge-mstp-v1
+
+Package: vyatta-op-show-interfaces-bridge-v1-yang
+Architecture: all
+Depends: ${misc:Depends}, ${yang:Depends}, vyatta-interfaces-base
+Description: vyatta-op-show-interfaces-bridge-v1 module
+ Operational mode integration for viewing bridge interface configuration
+
+Package: vyatta-op-clear-interfaces-bridge-v1-yang
+Architecture: all
+Depends: ${misc:Depends}, ${yang:Depends}, vyatta-interfaces-base
+Description: vyatta-op-clear-interfaces-bridge-v1 module
+ Operational mode integration for clearing bridge interface configuration
+
+Package: vyatta-op-show-bridge-v1-yang
+Architecture: all
+Depends:
+  vyatta-service-bridge (>= ${source:Version}),
+  ${misc:Depends},
+  ${yang:Depends}
+Description: vyatta-op-show-bridge-v1 module
+ Operational mode integration for showing bridge state
+
+Package: vyatta-op-clear-bridge-v1-yang
+Architecture: all
+Depends:
+  vyatta-service-bridge (>= ${source:Version}),
+  ${misc:Depends},
+  ${yang:Depends}
+Description: vyatta-op-clear-bridge-v1 module
+ Operational mode integration for clearing bridge state
+
+Package: vyatta-op-show-bridge-spanning-tree-v1-yang
+Architecture: all
+Depends:
+  vyatta-service-bridge (>= ${source:Version}),
+  ${misc:Depends},
+  ${yang:Depends}
+Description: vyatta-op-show-bridge-spanning-tree-v1 module
+ Operational mode integration for showing bridge spanning-tree state
+
+Package: vyatta-op-clear-bridge-spanning-tree-v1-yang
+Architecture: all
+Depends:
+  vyatta-service-bridge (>= ${source:Version}),
+  ${misc:Depends},
+  ${yang:Depends}
+Description: vyatta-op-clear-bridge-spanning-tree-v1 module
+ Operational mode integration for clearing bridge spanning-tree state

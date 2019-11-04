@@ -1,0 +1,329 @@
+module vyatta-interfaces-bridge-spanning-tree-v1 {
+	namespace "urn:vyatta.com:mgmt:vyatta-interfaces-bridge-spanning-tree:1";
+	prefix vyatta-interfaces-bridge-stp-v1;
+
+	import vyatta-interfaces-v1 {
+		prefix if;
+	}
+	import vyatta-interfaces-dataplane-v1 {
+		prefix interfaces-dataplane;
+	}
+	import vyatta-interfaces-tunnel-v1 {
+		prefix interfaces-tunnel;
+	}
+	import vyatta-interfaces-bonding-v1 {
+		prefix interfaces-bonding;
+	}
+	import vyatta-interfaces-l2tpeth-v1 {
+		prefix interfaces-l2tpeth;
+	}
+	import vyatta-interfaces-bridge-v1 {
+		prefix interfaces-bridge;
+	}
+	import vyatta-interfaces-switch-v1 {
+		prefix interfaces-switch;
+	}
+	import vyatta-interfaces-dataplane-switch-v1 {
+		prefix interfaces-dataplane-switch;
+	}
+
+	import configd-v1 {
+		prefix configd;
+	}
+
+	organization "AT&T Inc.";
+	contact
+		"AT&T
+		 Postal: 208 S. Akard Street
+		         Dallas, TX 75202
+		 Web: www.att.com";
+
+	description
+		"Copyright (c) 2017-2019, AT&T Intellectual Property.
+		 All right reserved.
+
+		 Copyright (c) 2015-2016 by Brocade Communications Systems, Inc.
+		 All rights reserved.
+
+		 Redistribution and use in source and binary forms, with or
+		 without modification, are permitted provided that the following
+		 conditions are met:
+
+		 1. Redistributions of source code must retain the above copyright
+			notice, this list of conditions and the following disclaimer.
+		 2. Redistributions in binary form must reproduce the above
+			copyright notice, this list of conditions and the following
+			disclaimer in the documentation and/or other materials provided
+			with the distribution.
+		 3. Neither the name of the copyright holder nor the names of its
+			contributors may be used to endorse or promote products derived
+			from this software without specific prior written permission.
+
+		 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+		 'AS IS' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+		 LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+		 FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+		 COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+		 INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+		 BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+		 LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+		 CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+		 LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+		 ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+		 POSSIBILITY OF SUCH DAMAGE.
+
+		 SPDX-License-Identifier: BSD-3-Clause
+
+		 The YANG module for vyatta-interfaces-bridge-spanning-tree-v1";
+
+
+	revision 2019-03-21 {
+		description
+			"Update port configuration to include filter and guard options
+			 for Cisco's Per-VLAN Spanning Tree (PVST) frames
+			 (pvst-filter & pvst-guard)";
+	}
+	revision 2018-12-20 {
+		description
+			"In order to maintain strict backwards compatibility, remove the
+			 priority must checks and replace them with explicit range
+			 values.";
+	}
+	revision 2018-09-25 {
+		description
+			"Update port configuration to include BPDU filter (bpdu-filter) option";
+	}
+	revision 2018-05-17 {
+		description
+			"Update bridge and port priority types to allow for conventional style
+			 values (0, 4096, 8192, ... and 0, 16, 32, 48, ...). Indicate that the
+			 existing compressed format (0, 1, 2, ...) is deprecated";
+	}
+	revision 2018-05-14 {
+		description "Update bridge-group action script parameter for vif interface";
+	}
+	revision 2018-04-18 {
+		description
+			"Updates to support the introduction of MSTP:
+			  o Add spanning-tree priority type
+			  o Add a grouping for the common port attributes";
+	}
+	revision 2018-03-20 {
+		description "Update to spanning tree support";
+	}
+	revision 2018-02-13 {
+		description "Add action script for bridge-group and switch-group updates";
+	}
+	revision 2017-11-18 {
+		description "Move spanning-tree to a grouping
+			     Add rapid-spanning-tree support to switch and switch-group";
+	}
+	revision 2015-11-18 {
+		description "Port cost range changed";
+	}
+
+	typedef stp-bridge-priority {
+		description
+			"Spanning Tree Bridge Priority type.
+
+			The Vyatta shorthand notation (multiplier) has been
+			superseded by the industry standard of using absolute
+			protocol values - multiples of 4096";
+		type union {
+			type uint8 {
+				range 0..15;
+				configd:help "Bridge priority multiplier (DEPRECATED)";
+			}
+			type uint16 {
+				range "0 | 4096 | 8192 | 12288 | 16384 | 20480 | 24576 | 28672 | 32768 | 36864 | 40960 | 45056 | 49152 | 53248 | 57344 | 61440";
+			}
+		}
+	}
+
+	typedef stp-port-priority {
+		description
+			"Spanning Tree Port Priority type.
+
+			The Vyatta shorthand notation (multiplier) has been
+			superseded by the industry standard of using absolute
+			protocol values - multiples of 16";
+		type union {
+			type uint8 {
+				range 0..15;
+				configd:help "Spanning Tree port priority multiplier (DEPRECATED)";
+			}
+			type uint16 {
+				range "0 | 16 | 32 | 48 | 64 | 80 | 96 | 112 | 128 | 144 | 160 | 176 | 192 | 208 | 224 | 240";
+			}
+		}
+	}
+
+	grouping stp-port-common-grp {
+		leaf cost {
+			type union {
+				type uint32 {
+					range 1..200000000;
+				}
+				type enumeration {
+					enum "auto" {
+						description "Determine port cost from line speed.";
+						configd:help "Determine port cost from line speed";
+					}
+				}
+			}
+			default "auto";
+			description "Spanning Tree port cost.";
+			configd:help "Spanning Tree port cost";
+		}
+		leaf priority {
+			type stp-port-priority;
+			default "8";
+			description
+				"Spanning Tree port priority, an unsigned value used to represent the
+				priority component of a Port Identifier. As per the
+				defined IEEE standards, valid Port Priorities are in
+				the range 0 through 240, in steps of 16. A lower
+				number represents a higher priority.
+
+				Alternatively a 'shorthand value' may be entered, a number
+				in the range 0..15.";
+			configd:help "Spanning Tree port priority (0 is highest priority)";
+		}
+	}
+
+	grouping spanning-tree-port {
+		uses stp-port-common-grp;
+		leaf bpdu-guard {
+			type empty;
+			description "Bring the port down if a BPDU is received on the port.";
+			configd:help "Enable Spanning Tree BPDU guard";
+		}
+		leaf pvst-guard {
+			type empty;
+			description
+				"Bring the port down if a Cisco PVST BPDU is received on the port.";
+			configd:help "Enable the Spanning Tree PVST guard capability";
+		}
+		leaf root-block {
+			type empty;
+			description "Restrict the ports role to that of Designated port.
+ If the port receives a superior BPDU then change the port state to Listening (STP) or
+ Discarding (RSTP) state.";
+			configd:help "Restrict ports ability to take Spanning Tree root role";
+		}
+		leaf bpdu-filter {
+			type empty;
+			description
+				"Enable the Spanning Tree BPDU filter (discard) capability for a port,
+				 i.e.  discard any ingress BPDUs and do not issue any
+				 BPDUs for this port.";
+
+			configd:help "Enable the Spanning Tree BPDU filter capability";
+		}
+		leaf pvst-filter {
+			type empty;
+			description
+				"Enable the Spanning Tree PVST filter (discard) capability for a port,
+				 i.e.  discard any ingress Cisco PVST frames.";
+			configd:help "Enable the Spanning Tree PVST filter capability";
+		}
+	}
+
+	augment /if:interfaces/interfaces-dataplane:dataplane/interfaces-bridge:bridge-group {
+		uses spanning-tree-port;
+		configd:end "vyatta-bridge-stp --action=update_port --bridge=$VAR(bridge/@) --port=$VAR(../@)";
+	}
+	augment /if:interfaces/interfaces-tunnel:tunnel/interfaces-bridge:bridge-group {
+		uses spanning-tree-port;
+		configd:end "vyatta-bridge-stp --action=update_port --bridge=$VAR(bridge/@) --port=$VAR(../@)";
+	}
+	augment /if:interfaces/interfaces-bonding:bonding/interfaces-bridge:bridge-group {
+		uses spanning-tree-port;
+		configd:end "vyatta-bridge-stp --action=update_port --bridge=$VAR(bridge/@) --port=$VAR(../@)";
+	}
+	augment /if:interfaces/interfaces-l2tpeth:l2tpeth/interfaces-l2tpeth:vif/interfaces-bridge:bridge-group {
+		uses spanning-tree-port;
+		configd:end "vyatta-bridge-stp --action=update_port --bridge=$VAR(bridge/@) --port=$VAR(../@)";
+	}
+	augment /if:interfaces/interfaces-l2tpeth:l2tpeth/interfaces-bridge:bridge-group {
+		uses spanning-tree-port;
+		configd:end "vyatta-bridge-stp --action=update_port --bridge=$VAR(bridge/@) --port=$VAR(../@)";
+	}
+	augment /if:interfaces/interfaces-dataplane:dataplane/interfaces-dataplane:vif/interfaces-bridge:bridge-group {
+		uses spanning-tree-port;
+		configd:end "vyatta-bridge-stp --action=update_port --bridge=$VAR(bridge/@) --port=$VAR(../../@).$VAR(../@)";
+	}
+	augment /if:interfaces/interfaces-bonding:bonding/interfaces-bonding:vif/interfaces-bridge:bridge-group {
+		uses spanning-tree-port;
+		configd:end "vyatta-bridge-stp --action=update_port --bridge=$VAR(bridge/@) --port=$VAR(../@)";
+	}
+	augment /if:interfaces/interfaces-dataplane:dataplane/interfaces-dataplane-switch:switch-group {
+		uses spanning-tree-port;
+		configd:end "vyatta-bridge-stp --action=update_port --bridge=$VAR(switch/@) --port=$VAR(../@)";
+	}
+
+	grouping spanning-tree {
+		container spanning-tree {
+			presence "Enable Spanning Tree Protocol";
+			description "Enable Spanning Tree Protocol.";
+			configd:help "Spanning Tree configuration";
+			configd:create "vyatta-bridge-stp --bridge=$VAR(../@) --action=create";
+			configd:delete "vyatta-bridge-stp --bridge=$VAR(../@) --action=delete";
+			must "2 * (forwarding-delay - 1) >= max-age" {
+				error-message "Bridge timers don't meet 2 * (Bridge Forward Delay - 1 second) >= Bridge Max Age";
+			}
+
+			leaf forwarding-delay {
+				type uint8 {
+					range 4..30;
+				}
+				default "15";
+				description "Forwarding delay in seconds.";
+				configd:help "Forwarding delay in seconds";
+				configd:update "vyatta-bridge-stp --bridge=$VAR(../../@) --action=set_fwddly --val=$VAR(@)";
+			}
+			leaf hello-time {
+				type uint8 {
+					range 1..10;
+				}
+				default "2";
+				description "Hello packet advertisement interval in seconds.";
+				configd:help "Hello packet advertisement interval in seconds";
+				configd:update "vyatta-bridge-stp --bridge=$VAR(../../@) --action=set_hello --val=$VAR(@)";
+			}
+			leaf max-age {
+				type uint8 {
+					range 6..40;
+				}
+				configd:help "Interval in seconds at which neighbor bridges are removed";
+				default "20";
+				description "Interval in seconds at which neighbor bridges are removed.";
+				configd:update "vyatta-bridge-stp --bridge=$VAR(../../@) --action=set_maxage --val=$VAR(@)";
+			}
+			leaf priority {
+				type stp-bridge-priority;
+				configd:help "Bridge priority (0 is highest priority)";
+				default "8";
+				description
+					"Bridge priority, an unsigned value used to represent the priority
+					component of a Bridge Identifier. As per the
+					defined IEEE standards, valid Bridge Priorities
+					are in the range 0 through 61440, in steps of
+					4096. A lower number represents a higher bridge
+					priority.
+
+					Alternatively a 'shorthand value' may be entered, a number
+					in the range 0..15.";
+				configd:update "vyatta-bridge-stp --bridge=$VAR(../../@) --action=set_priority --val=$VAR(@)";
+			}
+		}
+	}
+
+	augment /if:interfaces/interfaces-bridge:bridge {
+		uses spanning-tree;
+	}
+
+	augment /if:interfaces/interfaces-switch:switch {
+		uses spanning-tree;
+	}
+}

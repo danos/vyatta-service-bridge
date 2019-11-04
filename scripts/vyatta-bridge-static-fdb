@@ -1,0 +1,137 @@
+#!/usr/bin/perl
+#
+# Module: vyatta-bridge-fdb
+#
+# **** License ****
+# Copyright (c) 2018-2019, AT&T Intellectual Property.
+# All rights reserved.
+#
+# Copyright (c) 2015 by Brocade Communications Systems, Inc.
+# All rights reserved.
+#
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# **** End License ****
+#
+# Syntax:
+#    vyatta-bridge-fdb <hwaddr> [--verbose]
+#
+# Will update/delete a fdb entry for <hwaddr>
+# based on config changes.
+#
+
+use strict;
+use warnings;
+use JSON;
+
+use lib '/opt/vyatta/share/perl5/';
+
+use Vyatta::Configd;
+use Getopt::Long;
+
+our $VERSION = 1.00;
+
+my @end;
+
+my $verbose;
+
+GetOptions(
+    'verbose'  => \$verbose,
+) or usage();
+
+usage() if scalar @ARGV != 1;
+
+end_bridge_fdb(@ARGV);
+
+exit 0;
+
+#
+# Subroutines
+#
+
+sub usage {
+    printf(
+"Usage:  vyatta-bridge-static-fdb <hwaddr> [--verbose]\n"
+    );
+    exit 1;
+}
+
+sub delete_bridge_fdb {
+    my ( $hwaddr, $ifname, $vlan ) = @_;
+
+    my $cmd = "bridge fdb del $hwaddr dev $ifname";
+    $cmd = $cmd . " vlan $vlan master" if defined $vlan;
+
+    # We expect the interface to exist and to be member of bridge group
+    if ( system($cmd) != 0 ) {
+        warn "$cmd failed\n";
+    } elsif ($verbose) {
+        print "$cmd\n";
+    }
+    return 0;
+}
+
+sub add_bridge_fdb {
+    my ( $hwaddr, $ifname, $vlan ) = @_;
+
+    my $cmd = "bridge fdb replace $hwaddr dev $ifname";
+    $cmd = $cmd . " static vlan $vlan master" if defined $vlan;
+
+    if ( system($cmd) != 0 ) {
+        warn "$cmd failed\n";
+    } elsif ($verbose) {
+	printf "$cmd\n";
+    }
+    return 0;
+}
+
+sub end_bridge_fdb {
+    my ( $hwaddr ) = @_;
+    my $oldifname;
+    my $oldvlan;
+    my $ifname;
+    my $vlan;
+
+    foreach my $br ( @{ decode_json(`bridge -j fdb`) } ) {
+        if ($br->{mac} eq $hwaddr) {
+            $oldifname = $br->{ifname};
+            $oldvlan = $br->{vlan};
+            # Try to find an entry with vlan
+            last if defined $oldvlan;
+        }
+    }
+
+    my $cpath = 'protocols static bridge-mac '.$hwaddr;
+    my $client = Vyatta::Configd::Client->new();
+    if ($client->node_exists($Vyatta::Configd::Client::AUTO, $cpath)) {
+        my $tree = $client->tree_get_full_hash($cpath);
+        $ifname = $tree->{interface};
+        $vlan = $tree->{vlan};
+    }
+
+    if ($verbose) {
+        printf "$hwaddr if %s -> %s vlan %s -> %s\n",
+          defined($oldifname) ? $oldifname : "N/A",
+          defined($ifname)    ? $ifname    : "N/A",
+          defined($oldvlan)   ? $oldvlan   : "N/A",
+          defined($vlan)      ? $vlan      : "N/A";
+    }
+
+    if (!defined($ifname)) {
+        # Delete the complete interface
+        delete_bridge_fdb( $hwaddr, $oldifname, $oldvlan );
+    } elsif (defined($oldvlan) && !defined($vlan)) {
+        # Delete just the vlan
+        delete_bridge_fdb( $hwaddr, $oldifname, $oldvlan );
+        add_bridge_fdb( $hwaddr, $ifname, $vlan );
+    } elsif (defined($oldifname)) {
+        # Delete the existing interface first
+        delete_bridge_fdb( $hwaddr, $oldifname, $oldvlan );
+        add_bridge_fdb( $hwaddr, $ifname, $vlan);
+    } else {
+        # Fresh entry. Update interface with vlan, if provided
+        add_bridge_fdb( $hwaddr, $ifname, $vlan );
+    }
+
+    return 0;
+}

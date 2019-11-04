@@ -1,0 +1,10 @@
+scripts/vyatta-bridge-op opt/vyatta/bin
+scripts/vyatta-bridge-get-fdb opt/vyatta/bin
+scripts/vyatta-bridge-stp-op opt/vyatta/bin
+scripts/vyatta-bridge-ports opt/vyatta/bin
+scripts/vyatta-bridge.pl opt/vyatta/sbin
+scripts/vyatta-interfaces-bridge opt/vyatta/sbin
+scripts/vyatta-bridge-stp opt/vyatta/sbin
+scripts/vyatta-bridge-static-fdb opt/vyatta/sbin
+scripts/vyatta-bridge-state opt/vyatta/sbin
+tmplscripts opt/vyatta/share

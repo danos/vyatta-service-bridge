@@ -1,0 +1,619 @@
+#! /usr/bin/perl
+#
+# Copyright (c) 2018-2019, AT&T Intellectual Property.
+# All rights reserved.
+#
+# Copyright (c) 2010-2014, Brocade Communications Systems, Inc.
+# All rights reserved.
+#
+# SPDX-License-Identifier: GPL-2.0-only
+
+use strict;
+use warnings;
+use Readonly;
+
+use lib '/opt/vyatta/share/perl5/';
+
+use File::Slurp qw( read_file );
+use Vyatta::Config;
+use Vyatta::Configd;
+use Vyatta::Bridge qw(get_bridge_ports mstpd_start mstpd_restart is_mstpd_running is_switch
+  is_stp_enabled is_mstp_cfgd get_stp_cfg is_stp_cfgd);
+use Vyatta::SpanningTreeBridge;
+use Vyatta::SpanningTreePort qw(compute_port_path_cost);
+use Getopt::Long;
+
+use Data::Dumper;
+
+our $VERSION = 1.00;
+
+my $BRCTL   = '/sbin/brctl';
+my $BRIDGE  = '/sbin/bridge';
+my $MSTPCTL = '/sbin/mstpctl';
+
+# kernel STP priority is 0-65535, RSTP priority is 0-15
+# i.e. kernel pri = RSTP pri x 4096
+Readonly my $BRIDGE_PRIORITY_UNITS => 4096;
+
+Readonly my $mstpcfgdir  => "/run/mstpd/";
+Readonly my $mstpcfgfile => "$mstpcfgdir/mstpd.conf";
+Readonly my $DEBUG       => 0;
+
+#
+# main
+#
+
+my ( $action, $opt_bridge, $opt_port, $opt_val );
+
+sub usage {
+    printf("Usage for vyatta-bridge-stp\n");
+    printf("  --action={create|delete} --bridge=<bridge> \n");
+    printf(
+"  --action={set_fwddly|set_hello|set_maxage|setmaxhops|set_priority|set_txhold|set|version} --bridge=<bridge> --val=<val>\n"
+    );
+    printf(
+"  --action={set_portprio|set_pathcost|set_portrootblock|set_portbpduguard} --bridge=<bridge> --port=<port> --val=<val>\n"
+    );
+    printf("  --action=update_mstp --bridge=<bridge> --val=<version>\n");
+    exit(1);
+}
+
+GetOptions(
+    'action=s' => \$action,
+    'bridge=s' => \$opt_bridge,
+    'port=s'   => \$opt_port,
+    'val=s'    => \$opt_val,
+) or usage();
+
+# If the bridge isn't defined, try to get from running system
+if (defined $opt_port && !defined $opt_bridge) {
+	$opt_bridge = readlink("/sys/class/net/$opt_port/brport/bridge");
+	$opt_bridge =~ s/..\/..\/// if defined $opt_bridge;
+}
+
+if ( $action eq 'create' ) {
+    enable_spanning_tree($opt_bridge);
+    exit(0);
+}
+if ( $action eq 'delete' ) {
+    disable_spanning_tree($opt_bridge);
+    exit(0);
+}
+
+my $bridge = Vyatta::SpanningTreeBridge->new( $opt_bridge, $DEBUG );
+my $port;
+$port = Vyatta::SpanningTreePort->new( $opt_bridge, $opt_port, $DEBUG )
+  if defined($opt_port);
+my $mstp_restart_required = 0;
+
+if ( $action eq 'set_fwddly' ) {
+    set_bridge_fwd_delay( $bridge, $opt_val );
+}
+if ( $action eq 'set_hello' ) {
+    set_bridge_hello_time( $bridge, $opt_val );
+}
+if ( $action eq 'set_maxage' ) {
+    set_bridge_max_age( $bridge, $opt_val );
+}
+if ( $action eq 'set_maxhops' ) {
+    set_bridge_max_hops( $bridge, $opt_val );
+}
+if ( $action eq 'set_priority' ) {
+    set_bridge_priority( $bridge, $opt_val );
+}
+if ( $action eq 'set_txhold' ) {
+    set_bridge_tx_hold_count( $bridge, $opt_val );
+}
+if ( $action eq 'set_version' ) {
+    set_spanning_tree_version( $bridge, $opt_val );
+}
+if ( $action eq 'update_mstp' ) {
+    mstp_update( $bridge, $opt_val );
+}
+if ( $action eq 'new_port' ) {
+    update_bridge_port( $port, 1 );
+}
+if ( $action eq 'update_port' ) {
+    update_bridge_port( $port, 0 );
+}
+if ( $action eq 'set_portprio' ) {
+    set_port_priority( $port, $opt_val );
+}
+if ( $action eq 'set_portcost' ) {
+    set_port_path_cost( $port, $opt_val );
+}
+if ( $action eq 'set_portrootblock' ) {
+    set_port_root_block( $port, $opt_val );
+}
+if ( $action eq 'set_portbpduguard' ) {
+    set_port_bpdu_guard( $port, $opt_val );
+}
+if ( $action eq 'set_portadminedge' ) {
+    set_port_admin_edge( $port, $opt_val );
+}
+if ( $action eq 'set_port_autoedge' ) {
+    set_port_auto_edge( $port, $opt_val );
+}
+if ( $action eq 'set_portrestrtcn' ) {
+    set_port_restrict_tcn( $port, $opt_val );
+}
+if ( $action eq 'set_portassurance' ) {
+    set_port_assurance( $port, $opt_val );
+}
+if ( $action eq 'set_portp2p' ) {
+    set_port_p2p_detection( $port, $opt_val );
+}
+
+generate_mstp_configuration();
+
+if ($mstp_restart_required) {
+    #
+    # If STP is not configured it can only mean that we're about to
+    # turn off spanning-tree (invoke disable_spanning_tree()). Rather
+    # than restart the daemon, only to have it terminate almost
+    # immediately, simply ignore this particular restart (MSTP
+    # update).
+    #
+    if ( is_stp_cfgd($opt_bridge, 1) ) {
+        print("Restarting mstp daemon\n");
+        mstpd_restart();
+    }
+}
+
+exit 0;
+
+#
+# subroutines
+#
+
+sub collect_stp_configuration {
+    my ( $client, $type ) = @_;
+
+    my $names   = $client->get("interfaces $type");
+    my @stplist = ();
+    my $db      = $Vyatta::Configd::Client::AUTO;
+    my $path;
+    foreach my $name ( @{$names} ) {
+        $path = "interfaces $type $name spanning-tree";
+        next if ( !$client->node_exists( $db, $path ) );
+
+        my $tree = $client->tree_get_full_hash($path);
+        my %inst;
+
+        $inst{'name'} = $name;
+        $inst{'stp'}  = $tree->{'spanning-tree'};
+
+        my @stpports;
+        foreach my $port ( get_bridge_ports($name) ) {
+            my %pinst;
+            my $intf   = Vyatta::Interface->new($port);
+            my $iftype = $intf->{'type'};
+            $path = "interfaces $iftype $port $type-group";
+            next if ( !$client->node_exists( $db, $path ) );
+
+            my $ptree = $client->tree_get_full_hash($path);
+            $pinst{'port'}   = $port;
+            $pinst{'params'} = $ptree->{"$type-group"};
+            push( @stpports, \%pinst );
+        }
+
+        $inst{'ports'} = \@stpports;
+        push( @stplist, \%inst );
+    }
+
+    return @stplist;
+}
+
+sub generate_mstp_configuration {
+    my $client = Vyatta::Configd::Client->new();
+
+    my @stplist = ();
+    push( @stplist, collect_stp_configuration( $client, "switch" ) );
+    push( @stplist, collect_stp_configuration( $client, "bridge" ) );
+    my $json   = JSON::XS->new->utf8->pretty(1);
+    my $output = $json->encode( \@stplist );
+
+    mkdir("$mstpcfgdir", 0755) unless (-d "$mstpcfgdir");
+    open( my $newcfg, '>', "$mstpcfgfile" )
+      or die "Cannot open configuration file: $mstpcfgfile: $!";
+
+    print $newcfg $output;
+    close $newcfg;
+}
+
+sub enable_spanning_tree {
+    my ($bridge) = @_;
+    my $rv = 0;
+
+    # Is mstpd installed and feature-enabled?
+    $rv = userspace_stp_op( $bridge, 'on' );
+    if ( $rv != 0 ) {
+        return $rv;
+    }
+    update_all_bridge_ports($bridge);
+    return;
+}
+
+sub disable_spanning_tree {
+    my ($bridge) = @_;
+    my $rv = 0;
+
+    $rv = userspace_stp_op( $bridge, 'off' );
+    return $rv;
+}
+
+# Turn kernel Spanning Tree on/off
+#
+sub kernel_stp_op {
+    my ( $bridge, $onoff ) = @_;
+    my $rv = 0;
+
+    if ( $onoff eq 'on' ) {
+        $rv = system("$BRCTL stp $bridge on");
+    } elsif ( $onoff eq 'off' ) {
+        $rv = system("$BRCTL stp $bridge off");
+    }
+    return $rv;
+}
+
+# Turn user-space Spanning Tree (mstpd) on/off
+#
+sub userspace_stp_op {
+    my ( $bridge, $onoff ) = @_;
+
+    if ( $onoff eq 'on' ) {
+        mstpd_start();
+        if ( !is_mstpd_running() ) {
+            die "Failed to start mstpd process\n";
+        }
+    }
+
+    # Kernel stp cfg calls /sbin/bridge-stp, which calls
+    # "/sbin/mstpctl addbridge <bridge>" if the mstpd process is running.
+    return kernel_stp_op( $bridge, $onoff );
+}
+
+sub set_bridge_fwd_delay {
+    my ( $bridge, $fdly ) = @_;
+
+    return $bridge->set_fwd_delay($fdly);
+}
+
+sub set_bridge_hello_time {
+    my ( $bridge, $time ) = @_;
+
+    return $bridge->set_hello($time);
+}
+
+sub set_bridge_max_age {
+    my ( $bridge, $time ) = @_;
+
+    return $bridge->set_max_age($time);
+}
+
+sub set_bridge_max_hops {
+    my ( $bridge, $hops ) = @_;
+
+    return $bridge->set_max_hops($hops);
+}
+
+sub set_bridge_priority {
+    my ( $bridge, $priority ) = @_;
+
+    return $bridge->set_priority($priority);
+}
+
+sub set_bridge_tx_hold_count {
+    my ( $bridge, $count ) = @_;
+
+    return $bridge->set_tx_hold_count($count);
+}
+
+sub set_spanning_tree_version {
+    my ( $bridge, $version ) = @_;
+
+    mstp_update( $bridge, $version );
+
+    return $bridge->set_spanning_tree_version($version);
+}
+
+sub mstp_delete {
+    my ($bridge) = @_;
+    my $mstp     = $bridge->{'mstp'};
+    my $rv       = 0;
+    my $restart  = 0;
+
+    if ( keys( %{$mstp} ) ) {
+        foreach my $mstid ( split( ',', $mstp->{'mstilist'} ) ) {
+            next if $mstid == 0;
+
+            if ( $bridge->mstp_msti_delete($mstid) != 0 ) {
+                $restart++;
+            }
+        }
+
+        $rv = $bridge->mstp_region_delete();
+    }
+
+    return ( $rv, $restart != 0 );
+}
+
+sub msti_update {
+    my ( $bridge, $mstp, $mstid ) = @_;
+    my $rv = 0;
+
+    $rv = $bridge->mstp_msti_create($mstid);
+
+    if ( !$rv ) {
+        $rv =
+          $bridge->mstp_msti_set_priority( $mstid,
+            $mstp->returnValue("instance $mstid priority") );
+    }
+
+    if ( !$rv ) {
+        my @vlans = $mstp->returnValues("instance $mstid vlan");
+        $rv = $bridge->mstp_msti_set_vlans( $mstid, \@vlans );
+    }
+
+    return $rv;
+}
+
+sub mstp_update_bridge {
+    my ( $bridge, $currvers, $newvers ) = @_;
+    my $rv      = 0;
+    my $restart = 0;
+
+    if ( !is_switch( $bridge->{'bridge_name'} ) && ( $newvers eq 'mstp' ) ) {
+        print
+          "Warning: No VLANs on bridge interfaces, operating in RSTP mode\n";
+        return ( $rv, $restart != 0 );
+    }
+
+    my $mstp = get_stp_cfg( $bridge->{'bridge_name'} );
+
+    #
+    # Has spanning-tree been turned off or are we leaving MSTP mode?
+    #
+    if ( !$mstp->exists() ||
+         ( ( $newvers ne 'mstp' ) && ( $currvers eq 'mstp' ) ) ) {
+        return mstp_delete($bridge);
+    }
+
+    $mstp->setLevel( $mstp->setLevel() . " mstp" );
+
+    $rv = $bridge->mstp_region_update(
+        $mstp->returnValue("region name"),
+        $mstp->returnValue("region revision")
+    );
+
+    #
+    # Delete any "old" MSTI. Removal of an MSTI nearly always fails
+    # (the daemon doesn't do deletes), in which case we have to reload
+    # the daemon.
+    #
+    my $oldmstis = $bridge->{'mstp'}->{'mstilist'};
+    if ($oldmstis) {
+        foreach my $mstid ( split( ',', $oldmstis ) ) {
+            next if $mstid == 0;
+
+            if ( !$mstp->exists("instance $mstid") ) {
+                if ( $bridge->mstp_msti_delete($mstid) != 0 ) {
+                    $restart++;
+                }
+            }
+        }
+    }
+
+    if ( $restart == 0 ) {
+        foreach my $mstid ( $mstp->listNodes('instance') ) {
+            $rv += msti_update( $bridge, $mstp, $mstid );
+        }
+    }
+
+    return ( $rv, $restart != 0 );
+}
+
+sub mstp_update {
+    my ( $bridge, $new_version ) = @_;
+    my $rv           = 0;
+    my $curr_version = $bridge->{'version'};
+
+    if ( ( $curr_version eq 'mstp' ) || ( $new_version eq 'mstp' ) ) {
+        print "MSTP Bridge ($curr_version -> $new_version): \n"
+          . Dumper($bridge) if $DEBUG;
+
+        ( $rv, $mstp_restart_required ) =
+          mstp_update_bridge( $bridge, $curr_version, $new_version );
+    }
+
+    return $rv;
+}
+
+#
+# Spanning Tree ports
+#
+
+sub mstp_update_bridge_port {
+    my ( $port, $cfg, $bridge_group ) = @_;
+
+    return 0 if ( !is_mstp_cfgd( $port->{'bridge_name'}, 1 ) );
+
+    my $path = sprintf( "%s %s mstp", $cfg->setLevel(), $bridge_group );
+    my $mstp = Vyatta::Config->new($path);
+    my $rv   = 0;
+
+    foreach my $mstid ( $mstp->listNodes("instance") ) {
+        $rv =
+          $port->mstp_msti_set_priority( $mstid,
+            $mstp->returnValue("instance $mstid priority") );
+        $rv +=
+          $port->mstp_msti_set_path_cost( $mstid,
+            $mstp->returnValue("instance $mstid cost") );
+        return $rv if ( $rv != 0 );
+    }
+
+    return 0;
+}
+
+# Update bridge port parameters when Spanning Tree is enabled on a bridge
+#
+sub update_all_bridge_ports {
+    my ($bridge) = @_;
+
+    foreach my $name ( get_bridge_ports($bridge) ) {
+	my $port = Vyatta::SpanningTreePort->new($bridge, $name);
+        update_bridge_port( $port, 1 );
+    }
+    return;
+}
+
+# update_bridge_port
+#
+# Called either:
+#   1. For all ports, when Spanning Tree is enabled on a bridge, or
+#   2. For one port, when that port is first added to a bridge-group
+#      or switch-group.
+#
+sub update_bridge_port {
+    my ( $port, $new ) = @_;
+    my $val;
+    my $state;
+
+    # Get port information from configuration
+    my $intf = Vyatta::Interface->new($port->{'port_name'});
+    if ( !$intf ) {
+        printf "Unknown interface type " . $port->{'port_name'} . "\n";
+        return;
+    }
+
+    return unless is_stp_cfgd($port->{'bridge_name'}, 1);
+
+    my $cfg = Vyatta::Config->new();
+    $cfg->setLevel( $intf->path() );
+
+    my $bridge_group = is_switch($port->{'bridge_name'}) ? 'switch-group' : 'bridge-group';
+
+    mstp_update_bridge_port( $port, $cfg, $bridge_group );
+
+    $val = $cfg->returnValue("$bridge_group cost");
+    # Allow bridge to calculate path cost if its a new port and the value
+    # is 'auto'
+    if ( $new == 0 or ( defined($val) and $val ne 'auto' ) ) {
+        set_port_path_cost( $port, $val ) == 0 or exit 1;
+    }
+
+    $val = $cfg->returnValue("$bridge_group priority");
+    set_port_priority( $port, $val ) == 0 or exit 1;
+
+    $state = $cfg->exists("$bridge_group root-block");
+    set_port_root_block( $port, $state ) == 0 or exit 1;
+
+    $state = $cfg->exists("$bridge_group bpdu-guard");
+    set_port_bpdu_guard( $port, $state ) == 0 or exit 1;
+
+    $state = $cfg->exists("$bridge_group pvst-guard");
+    $port->set_pvst_guard($state) == 0 or exit 1;
+
+    $state = $cfg->exists("$bridge_group bpdu-filter");
+    set_port_bpdu_filter( $port, $state ) == 0 or exit 1;
+
+    $state = $cfg->exists("$bridge_group pvst-filter");
+    $port->set_pvst_filter($state) == 0 or exit 1;
+
+    $state = $cfg->exists("$bridge_group admin-edge");
+    set_port_admin_edge( $port, $state ) == 0 or exit 1;
+
+    $state = $cfg->exists("$bridge_group auto-edge");
+    set_port_auto_edge( $port, $state ) == 0 or exit 1;
+
+    $state = $cfg->exists("$bridge_group restrict-tcn");
+    set_port_restrict_tcn( $port, $state ) == 0 or exit 1;
+
+    $state = $cfg->exists("$bridge_group network-port");
+    set_port_network_port( $port, $state ) == 0 or exit 1;
+
+    my $p2p = 'auto';
+    if ( $cfg->exists("$bridge_group point-to-point on") ) {
+        $p2p = 'yes';
+    } elsif ( $cfg->exists("$bridge_group point-to-point off") ) {
+        $p2p = 'no';
+    }
+    set_port_p2p_detection( $port, $p2p ) == 0 or exit 1;
+    return;
+}
+
+sub set_port_priority {
+    my ( $port, $prio ) = @_;
+
+    return $port->set_priority($prio);
+}
+
+#  Only called for a new port if the cfg is something other than 'auto'.
+#
+sub set_port_path_cost {
+    my ( $port, $cost ) = @_;
+
+    return $port->set_path_cost($cost);
+}
+
+# "root block" in old STP terms is "restricted root role" in RSTP terms
+sub set_port_root_block {
+    my ( $port, $state ) = @_;
+
+    return $port->set_root_block($state);
+}
+
+sub set_port_bpdu_guard {
+    my ( $port, $state ) = @_;
+
+    return $port->set_bpdu_guard($state);
+}
+
+sub set_port_admin_edge {
+    my ( $port, $state ) = @_;
+
+    return $port->set_admin_edge($state);
+}
+
+sub set_port_auto_edge {
+    my ( $port, $state ) = @_;
+
+    return $port->set_auto_edge($state);
+}
+
+sub set_port_restrict_tcn {
+    my ( $port, $state ) = @_;
+
+    return $port->set_restrict_tcn($state);
+}
+
+sub set_port_network_port {
+    my ( $port, $state ) = @_;
+
+    return $port->set_network_port($state);
+}
+
+sub set_port_p2p_detection {
+    my ( $port, $state ) = @_;
+
+    return $port->set_p2p_detection($state);
+}
+
+sub set_port_bpdu_filter {
+    my ( $port, $state ) = @_;
+
+    return $port->set_bpdu_filter($state);
+}
+
+sub read_sysfs {
+    my ($filename) = @_;
+
+    if ( !( -f "$filename" ) ) {
+        return;
+    }
+    my $rv = read_file("$filename");
+    if ($rv) {
+        chomp($rv);
+    }
+    return $rv;
+}

@@ -1,0 +1,108 @@
+module vyatta-bridge-static-fdb-v1 {
+	namespace "urn:vyatta.com:mgmt:vyatta-bridge-static-fdb:1";
+	prefix vyatta-bridge-static-fdb-v1;
+
+	import vyatta-types-v1 {
+		prefix types;
+	}
+	import configd-v1 {
+		prefix configd;
+	}
+	import vyatta-protocols-v1 {
+		prefix protocols;
+	}
+	import vyatta-protocols-static-v1 {
+		prefix prot-static;
+	}
+	organization "AT&T Inc.";
+	contact
+		"AT&T
+		 Postal: 208 S. Akard Street
+		         Dallas, TX 75202
+		 Web: www.att.com";
+
+	description
+		"Copyright (c) 2018, AT&T Intellectual Property.
+		 All rights reserved.
+
+		 Copyright (c) 2015-2016 by Brocade Communications Systems, Inc.
+		 All rights reserved.
+
+		 Redistribution and use in source and binary forms, with or
+		 without modification, are permitted provided that the following
+		 conditions are met:
+
+		 1. Redistributions of source code must retain the above copyright
+			notice, this list of conditions and the following disclaimer.
+		 2. Redistributions in binary form must reproduce the above
+			copyright notice, this list of conditions and the following
+			disclaimer in the documentation and/or other materials provided
+			with the distribution.
+		 3. Neither the name of the copyright holder nor the names of its
+			contributors may be used to endorse or promote products derived
+			from this software without specific prior written permission.
+
+		 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+		 'AS IS' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+		 LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+		 FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+		 COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+		 INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+		 BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+		 LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+		 CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+		 LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+		 ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+		 POSSIBILITY OF SUCH DAMAGE.
+
+		 SPDX-License-Identifier: BSD-3-Clause
+
+		 The YANG module for vyatta-bridge-static-fdb-v1";
+
+	revision 2018-04-11 {
+		description
+			"Update configd:end script options. Only pass mac as argument.";
+	}
+	revision 2018-02-23 {
+		description
+			"Add (optional) VLANs to static bridge FDB entries
+			 Update configd:end script options";
+	}
+	revision 2015-07-29 {
+		description "Initial revision";
+	}
+	augment /protocols:protocols/prot-static:static {
+		list bridge-mac {
+			description "Static entry in bridge forwarding database.";
+			configd:help "Static entry in bridge forwarding database";
+			configd:end "vyatta-bridge-static-fdb $VAR(@)";
+			key "mac";
+			leaf mac {
+				type types:mac-address;
+				description "MAC address for bridge FDB static entry.";
+				configd:help "MAC address for bridge FDB static entry";
+			}
+			leaf interface {
+				type string {
+					length "2..256";
+				}
+				mandatory true;
+				description "Interface for the bridge FDB static entry.";
+				configd:help "Interface for the bridge FDB static entry";
+				configd:allowed "vyatta-bridge-ports --show-ports";
+			}
+			leaf vlan {
+				type uint16 {
+					range 1..4094;
+				}
+				description
+					"VLAN for the bridge FDB static entry. When using VLAN-aware bridges,
+					 switches, it is necessary to specify the target VLAN for the entry.";
+				configd:help "VLAN for the switch (VLAN-aware bridge) FDB static entry.";
+				must "not(contains(../interface, '.'))" {
+					error-message "VIF interfaces cannot be members of a switch";
+				}
+			}
+		}
+	}
+}

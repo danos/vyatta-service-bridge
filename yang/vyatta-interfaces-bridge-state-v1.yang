@@ -1,0 +1,541 @@
+module vyatta-interfaces-bridge-state-v1 {
+	namespace "urn:vyatta.com:mgmt:vyatta-interfaces-bridge-state:1";
+	prefix vyatta-interfaces-bridge-state-v1;
+
+	import vyatta-types-v1 {
+		prefix types;
+	}
+
+	organization "AT&T Inc.";
+	contact
+		"AT&T
+		 Postal: 208 S. Akard Street
+		         Dallas, TX 75202
+		 Web: www.att.com";
+
+	description
+		"Copyright (c) 2019, AT&T Intellectual Property.
+		 All rights reserved.
+
+		 Redistribution and use in source and binary forms, with or
+		 without modification, are permitted provided that the following
+		 conditions are met:
+
+		 1. Redistributions of source code must retain the above copyright
+			notice, this list of conditions and the following disclaimer.
+		 2. Redistributions in binary form must reproduce the above
+			copyright notice, this list of conditions and the following
+			disclaimer in the documentation and/or other materials provided
+			with the distribution.
+		 3. Neither the name of the copyright holder nor the names of its
+			contributors may be used to endorse or promote products derived
+			from this software without specific prior written permission.
+
+		 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+		 'AS IS' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+		 LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+		 FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+		 COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+		 INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+		 BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+		 LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+		 CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+		 LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+		 ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+		 POSSIBILITY OF SUCH DAMAGE.
+
+		 SPDX-License-Identifier: BSD-3-Clause
+
+		 The YANG module for vyatta-interfaces-bridge-state-v1.  This
+		 module provides support for bridge and switch state elements,
+		 i.e. bridge/switch attributes, port attributes and counters
+		 as well as the FDB attributes.";
+
+	revision 2019-08-13 {
+		description
+			"Update the bridge/switch admin-point-to-point operational state to
+			 reflect its 3 possible states - yes, no and auto";
+	}
+
+	revision 2019-06-21 {
+		description "Add hardware to enumeration of entry sources";
+	}
+
+	revision 2019-04-10 {
+		description
+			"Provide a group object that summarises the FDB state. Access to
+			full details of every FDB entry is provided through an RPC";
+	}
+
+	revision 2019-03-22 {
+		description "Add support for PVST filter and guard";
+	}
+
+	revision 2019-02-27 {
+		description "Initial revision, derived from the original switch version";
+	}
+
+	typedef fdb-state {
+		type enumeration {
+			enum permanent {
+				description "A local permanent fdb entry";
+			}
+			enum static {
+				description "A static (no arp) fdb entry";
+			}
+			enum reachable {
+				description "An unexpired fdb entry";
+			}
+			enum stale {
+				description "An expired fdb entry";
+			}
+		}
+	}
+
+	typedef fdb-source {
+		type enumeration {
+			enum controller {
+				description "An fdb entry sourced from and maintained by the controller (kernel)";
+			}
+			enum dataplane {
+				description "An fdb entry sourced from and maintained by the dataplane";
+			}
+			enum hardware {
+				description "An fdb entry sourced from hardware by the dataplane";
+			}
+		}
+	}
+
+	typedef bridge-port-state {
+		type enumeration {
+			enum disabled {
+				description "Disabled";
+			}
+			enum listening {
+				description "Listening";
+			}
+			enum learning {
+				description "Learning";
+			}
+			enum forwarding {
+				description "Forwarding";
+			}
+			enum blocking {
+				description "Blocking";
+			}
+			enum discarding {
+				description "Discarding";
+			}
+		}
+	}
+
+	typedef bridge-port-role {
+		type enumeration {
+			enum Unknown {
+				description "Unknown";
+			}
+			enum Disabled {
+				description "Disabled";
+			}
+			enum Root {
+				description "Root";
+			}
+			enum Designated {
+				description "Designated";
+			}
+			enum Alternate {
+				description "Alternate";
+			}
+			enum Backup {
+				description "Backup";
+			}
+			enum Master {
+				description "Master";
+			}
+		}
+	}
+
+	grouping bridge-state-grp {
+		leaf ageing-time {
+			description "The interval that an inactive entry will be kept in the forwarding database";
+			type uint32;
+			units "seconds";
+		}
+		leaf bridge-forward-delay {
+			description "Listening and learning delay before transtitioning to the forwarding state for a bridge port";
+			type uint32;
+			units "seconds";
+		}
+		leaf bridge-id {
+			description "The bridge-id for this instance";
+			type string;
+		}
+		leaf bridge-max-age {
+			description "The maximum age of received protocol BPDUs";
+			type uint32;
+			units "seconds";
+		}
+		leaf bridge-name {
+			description "Name of this instance";
+			type string;
+		}
+		leaf designated-root {
+			description "The designated root bridge in the spanning tree";
+			type string;
+		}
+		leaf enabled {
+			description "If true, this instance is active";
+			type boolean;
+		}
+		leaf forward-delay {
+			description "Listening and learning delay before transtitioning to the forwarding state for a root bridge port";
+			type uint32;
+			units "seconds";
+		}
+		leaf hello-time {
+			description "The maximum interval between each BPDU that is sent on a port";
+			type uint32;
+			units "seconds";
+		}
+		leaf internal-path-cost {
+			description "The path cost from the transmitting bridge to the regional root";
+			type uint32;
+		}
+		leaf last-topology-change-port {
+			description "The last port to receive a topology change notification";
+			type uint32;
+		}
+		leaf max-age {
+			description "The amount of time to wait for a Hello before starting a topology change";
+			type uint32;
+			units "seconds";
+		}
+		leaf max-hops {
+			description "Maximum number of hops that a BPDU can be forwarded in an MSTP region";
+			type uint32;
+		}
+		leaf path-cost {
+			description "The path cost from the transmitting bridge to the root";
+			type uint32;
+		}
+		leaf priority {
+			description "The relative, to other bridges, forwarding preference of this bridge";
+			type uint32;
+		}
+		leaf regional-root {
+			description "The bridge identifier of the current regional root";
+			type string;
+		}
+		leaf root-port {
+			description "The best path to the designated root bridge";
+			type uint32;
+		}
+		leaf stp-state {
+			description "If true, the spanning tree is enabled";
+			type boolean;
+		}
+		leaf topology-change {
+			description "True if any port has a valid topology change";
+			type boolean;
+		}
+		leaf topology-change-count {
+			description "Number of topology change notifications received";
+			type uint32;
+		}
+		leaf topology-change-port {
+			description "Current port to receive topology change notification";
+			type uint32;
+		}
+		leaf topology-change-time {
+			description "Time since the last topology change notification";
+			type uint32;
+			units "seconds";
+		}
+		leaf tx-hold-count {
+			description "The value used to limit the maximum BPDU transmission rate";
+			type uint32;
+		}
+		leaf stp-version {
+			description "The version of the spanning tree protocol in use";
+			type string;
+		}
+	}
+
+	grouping bridge-port-state-grp {
+		leaf admin-edge-port {
+			description "Configured as a spanning tree edge port";
+			type boolean;
+		}
+		leaf admin-cost {
+			description "Configured port path cost";
+			type uint32;
+		}
+		leaf admin-internal-cost {
+			description "Configured internal port path cost";
+			type uint32;
+		}
+		leaf admin-point-to-point {
+			description "Configured as a spanning tree point-to-point connection";
+			type union {
+				type boolean;
+				type enumeration {
+					enum auto {
+						description "Automatically derive the operational state of this port";
+					}
+					enum no {
+						description "Not a point-to-point port";
+					}
+					enum yes {
+						description "A point-to-point port";
+					}
+				}
+			}
+		}
+		leaf auto-edge-port {
+			description "If true, automatic edge port detection is enabled";
+			type boolean;
+		}
+		leaf bridge-assurance-inconsistent {
+			description "If true, bridge assurance has detected an inconsistency";
+			type boolean;
+		}
+		leaf bpdu-filter-port {
+			description "If true, BPDU filter (discard) is enabled on this port";
+			type boolean;
+		}
+		leaf bpdu-guard-error {
+			description "If true, bridge PDU guard has detected a BPDU on this port";
+			type boolean;
+		}
+		leaf bpdu-guard-port {
+			description "If true, bridge PDU guard is enabled on this port";
+			type boolean;
+		}
+		leaf designated-bridge {
+			description "The designated bridge seen by this port";
+			type string;
+		}
+		leaf designated-cost {
+			description "The port path cost to designated bridge";
+			type uint32;
+		}
+		leaf designated-internal-cost {
+			description "The internal port path cost to designated bridge";
+			type uint32;
+		}
+		leaf designated-port {
+			description "The port determined to have the lowest cost";
+			type string;
+		}
+		leaf designated-regional-root {
+			description "The designated regional root bridge seen by this port";
+			type string;
+		}
+		leaf designated-root {
+			description "The designated root bridge seen by this port";
+			type string;
+		}
+		leaf disputed {
+			description "If true, the port has been marked as disputed";
+			type boolean;
+		}
+		leaf enabled {
+			description "If true, spanning tree is enabled on this port";
+			type boolean;
+		}
+		leaf filtered-bridge-pdus {
+			description "If bpdu-filter is enabled, the number of BPDUs received on this port that were subsequently filtered (discarded)";
+			type uint32;
+		}
+		leaf filtered-bridge-pvst-pdus {
+			description "If pvst-filter is enabled, the number of PVSTs received on this port that were subsequently filtered (discarded)";
+			type uint32;
+		}
+		leaf port-cost {
+			description "The cost from the bridge to the regional root";
+			type uint32;
+		}
+		leaf hello-time {
+			description "The maximum interval between each BPDU that is sent on a port";
+			type uint32;
+			units "seconds";
+		}
+		leaf internal-port-cost {
+			description "The cost from the bridge to the regional root";
+			type uint32;
+		}
+		leaf network-port {
+			description "If true, this port is configured as a network port";
+			type boolean;
+		}
+		leaf received-bridge-pdus {
+			description "Number of bridge BPDUs received on this port";
+			type uint32;
+		}
+		leaf received-topology-changes {
+			description "Number of topology changes received on this port";
+			type uint32;
+		}
+		leaf blocking-transitions {
+			description "Number of times this port has transitioned to the Blocking state";
+			type uint32;
+		}
+		leaf forwarding-transitions {
+			description "Number of times this port has transitioned to the Forwarding state";
+			type uint32;
+		}
+		leaf transmitted-bridge-pdus {
+			description "Number of BPDUs that have been transmitted by this port";
+			type uint32;
+		}
+		leaf transmitted-topology-changes {
+			description "Number of topology changes transmitted by this port";
+			type uint32;
+		}
+		leaf received-stp {
+			description "If true, this port has received an STP protocol BPDU";
+			type boolean;
+		}
+		leaf received-rstp {
+			description "If true, this port has received an RSTP protocol BPDU";
+			type boolean;
+		}
+		leaf sent-rstp {
+			description "If true, this port has sent an RSTP protocol BPDU";
+			type boolean;
+		}
+		leaf edge-port {
+			description "If true, this port is an edge port";
+			type boolean;
+		}
+		leaf point-to-point {
+			description "If true, this port is a point-to-point connection";
+			type boolean;
+		}
+		leaf port-id {
+			description "The port id assigned to this bridge port";
+			type string;
+		}
+		leaf port-name {
+			description "Interface name of the member port";
+			type string;
+		}
+		leaf port-no {
+			description "Port number of this port on the bridge";
+			type uint32;
+		}
+		leaf priority {
+			description "The relative, to other bridges, forwarding preference of this bridge";
+			type uint32;
+		}
+		leaf role {
+			description "The spanning tree role of this port";
+			type bridge-port-role;
+		}
+		leaf root-block {
+			description "If true, this port will block attempts to become the designated root";
+			type boolean;
+		}
+		leaf topology-change-restricted {
+			description "If true, this port will ignore topology changes";
+			type boolean;
+		}
+		leaf speed {
+			description "The speed of this port and used for path cost calcualations";
+			type uint32;
+		}
+		leaf port-state {
+			description "The spanning tree status of this bridge port";
+			type bridge-port-state;
+		}
+		leaf pvst-filter-port {
+			description "If true, PVST filter (discard) is enabled on this port";
+			type boolean;
+		}
+		leaf pvst-guard-error {
+			description "If true, bridge PVST guard has detected a PVST frame on this port";
+			type boolean;
+		}
+		leaf pvst-guard-port {
+			description "If true, bridge PVST guard is enabled on this port";
+			type boolean;
+		}
+		leaf topology-change-ack {
+			description "If true, a topology change acknowledge flag has been received on this port";
+			type boolean;
+		}
+	}
+
+	grouping bridge-fdb-state-summary-grp {
+		leaf number-of-entries {
+			description
+				"For the parent port, the total number of MAC addresses currently held
+				 in the database";
+			type uint32;
+		}
+		leaf permanent {
+			description "Number of permanent MAC entries";
+			type uint32;
+		}
+		leaf static {
+			description "Number of static MAC entries";
+			type uint32;
+		}
+		leaf reachable {
+			description "Number of reachable MAC entries";
+			type uint32;
+		}
+		leaf stale {
+			description "Number of stale MAC entries";
+			type uint32;
+		}
+	}
+
+	grouping bridge-fdb-state-grp {
+		list ports {
+			description "Member ports of this bridge/switch";
+			key port-name;
+
+			leaf port-name {
+				description "Interface name of the member port";
+				type string;
+			}
+
+			list forwarding-database {
+				description "Statically defined or learned Ethernet MAC addresses associated with this switch/bridge port";
+				key index;
+
+				leaf index {
+					description "Index into the forwarding database";
+					type uint32;
+				}
+				leaf vlan-id {
+					description "For switch ports (only), the VLAN on which this MAC address is reachable";
+					type types:vlan;
+				}
+				leaf mac {
+					description "The destination MAC address";
+					type types:mac-address;
+				}
+				leaf updated {
+					description "Elapsed time since this entry was last updated";
+					type uint32;
+					units "seconds";
+				}
+				leaf used {
+					description "Elapsed time since this entry was last used";
+					type uint32;
+					units "seconds";
+				}
+				leaf state {
+					description "The state of this forwarding database entry";
+					type fdb-state;
+				}
+				leaf source {
+					description "The source of this particular entry - controller, dataplane or hardware";
+					type fdb-source;
+				}
+			}
+		}
+	}
+}

@@ -1,0 +1,100 @@
+module vyatta-op-clear-bridge-v1 {
+	namespace "urn:vyatta.com:mgmt:vyatta-op-clear-bridge:1";
+	prefix vyatta-op-clear-bridge-v1;
+
+	import vyatta-opd-extensions-v1 {
+		prefix opd;
+	}
+	import vyatta-op-clear-v1 {
+		prefix clear;
+	}
+	import vyatta-types-v1 {
+		prefix types;
+	}
+
+	organization "AT&T Inc.";
+	contact
+		"AT&T
+		 Postal: 208 S. Akard Street
+		         Dallas, TX 25202
+		 Web: www.att.com";
+
+	description
+		"Copyright (c) 2019, AT&T Intellectual Property.
+		 All rights reserved.
+
+		 Redistribution and use in source and binary forms, with or
+		 without modification, are permitted provided that the following
+		 conditions are met:
+
+		 1. Redistributions of source code must retain the above copyright
+			notice, this list of conditions and the following disclaimer.
+		 2. Redistributions in binary form must reproduce the above
+			copyright notice, this list of conditions and the following
+			disclaimer in the documentation and/or other materials provided
+			with the distribution.
+		 3. Neither the name of the copyright holder nor the names of its
+			contributors may be used to endorse or promote products derived
+			from this software without specific prior written permission.
+
+		 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+		 'AS IS' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+		 LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+		 FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+		 COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+		 INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+		 BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+		 LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+		 CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+		 LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+		 ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+		 POSSIBILITY OF SUCH DAMAGE.
+
+		 SPDX-License-Identifier: BSD-3-Clause
+
+		Defines the top-level 'bridge' node under 'clear' for operational CLI";
+
+	revision 2019-03-12 {
+		description "Initial version";
+	}
+
+	opd:augment /clear:clear {
+		opd:command bridge {
+			opd:help "Clear bridge interface information";
+
+			opd:argument bridge-name {
+				opd:help "Clear bridge information for a given bridge";
+				opd:allowed 'vyatta-interfaces.pl --show bridge --filter-out "\."';
+				type string {
+					pattern 'br[0-9]+';
+					opd:pattern-help "<brN>";
+				}
+
+				opd:command macs {
+					opd:help "Clear bridge Media Access Control (MAC) address table";
+					opd:on-enter 'vyatta-bridge-op --action=clear_macs --bridge="$3"';
+
+					opd:option mac-address {
+						type types:mac-address;
+						opd:help "Clear specified MAC address from bridge forwarding database";
+						opd:on-enter 'vyatta-bridge-op --action=clear_macs --bridge="$3" --mac="$6"';
+					}
+
+					opd:option port {
+						type types:interface-ifname;
+						opd:help "Clear bridge Media Access Control (MAC) address table for a given port";
+						opd:allowed 'vyatta-bridge-ports --bridge="$3" --show-ports';
+
+						opd:on-enter 'vyatta-bridge-op --action=clear_macs --bridge="$3" --port="$6"';
+
+						opd:option mac-address {
+							type types:mac-address;
+							opd:help "Clear specified MAC address on specified port from bridge forwarding database";
+							opd:on-enter 'vyatta-bridge-op --action=clear_macs --bridge="$3" --port="$6" --mac="$8"';
+						}
+					}
+				}
+			}
+		}
+	}
+}

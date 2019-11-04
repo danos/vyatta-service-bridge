@@ -1,0 +1,206 @@
+module vyatta-interfaces-bridge-rstp-v1 {
+	namespace "urn:vyatta.com:mgmt:vyatta-interfaces-bridge-rstp:1";
+	prefix interfaces-bridge-rstp;
+
+	import vyatta-interfaces-v1 {
+		prefix if;
+	}
+	import vyatta-interfaces-dataplane-v1 {
+		prefix interfaces-dataplane;
+	}
+	import vyatta-interfaces-tunnel-v1 {
+		prefix interfaces-tunnel;
+	}
+	import vyatta-interfaces-bonding-v1 {
+		prefix interfaces-bonding;
+	}
+	import vyatta-interfaces-l2tpeth-v1 {
+		prefix interfaces-l2tpeth;
+	}
+	import vyatta-interfaces-bridge-v1 {
+		prefix interfaces-bridge;
+	}
+	import vyatta-interfaces-bridge-spanning-tree-v1 {
+		prefix interfaces-bridge-stp;
+	}
+	import vyatta-interfaces-switch-v1 {
+		prefix interfaces-switch;
+	}
+	import vyatta-interfaces-dataplane-switch-v1 {
+		prefix interfaces-dataplane-switch;
+	}
+	import configd-v1 {
+		prefix configd;
+	}
+
+	organization "AT&T Inc.";
+	contact
+		"AT&T
+		 Postal: 208 S. Akard Street
+		         Dallas, TX 75202
+		 Web: www.att.com";
+
+	description
+		"Copyright (c) 2017-2018, AT&T Intellectual Property.
+		 All rights reserved.
+
+		 Copyright (c) 2015-2016 by Brocade Communications Systems, Inc.
+		 All rights reserved.
+
+		 Redistribution and use in source and binary forms, with or
+		 without modification, are permitted provided that the following
+		 conditions are met:
+
+		 1. Redistributions of source code must retain the above copyright
+			notice, this list of conditions and the following disclaimer.
+		 2. Redistributions in binary form must reproduce the above
+			copyright notice, this list of conditions and the following
+			disclaimer in the documentation and/or other materials provided
+			with the distribution.
+		 3. Neither the name of the copyright holder nor the names of its
+			contributors may be used to endorse or promote products derived
+			from this software without specific prior written permission.
+
+		 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+		 'AS IS' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+		 LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+		 FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+		 COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+		 INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+		 BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+		 LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+		 CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+		 LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+		 ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+		 POSSIBILITY OF SUCH DAMAGE.
+
+		 SPDX-License-Identifier: BSD-3-Clause
+
+		 The YANG module for vyatta-interfaces-bridge-rstp-v1.";
+
+	revision 2018-04-17 {
+		description
+			"Add documentation to spanning-tree version enumeration and add mstp to
+			 the list";
+	}
+	revision 2018-03-20 {
+		description "Move rapid-spanning-tree to a grouping
+			     Add rapid-spanning-tree support to switch-group";
+	}
+	revision 2015-10-13 {
+		description "Initial revision of version 1";
+	}
+
+	grouping rstp-port {
+		leaf admin-edge {
+			type empty;
+			description "Port is connected to a LAN that has no other bridges attached.
+Transition directly to the forwarding state.";
+			configd:help "Enable Spanning Tree admin edge mode";
+		}
+		leaf auto-edge {
+			type empty;
+			description "Automatically determine if port is connected to a LAN that has
+no other bridges attached. A port attached to a LAN with no other bridges attached may transition
+directly to the forwarding state.";
+			configd:help "Enable Spanning Tree automatic admin edge detection";
+		}
+		leaf restrict-tcn {
+			type empty;
+			description "Restricts the ports ability to propagate received topology
+ change notifications.";
+			configd:help "Restrict propagation of Spanning Tree topology change notifications";
+		}
+		leaf network-port {
+			type empty;
+			description "Detect unidirectional link on point-to-point link where RSTP
+ is enabled. The port is in an inconsistent state (Listening or Discarding)
+ until a BPDU is received from the peer.  network-port must be configured
+ on both ends of the link.  Bridge assurance is operational only when
+ network-port is configured and the operational status is point-to-point and
+ the version is RSTP.";
+			configd:help "Enable Spanning Tree uni-directional link detection";
+		}
+		leaf point-to-point {
+			configd:help "Set point-to-point operational status";
+			description "Set the ports point-to-point operational status. Auto means
+ p2p operational status is determined from port duplex mode.  Bridge
+ assurance is operational only when network-port is configured and the
+ operational status is point-to-point and the version is RSTP.";
+			type enumeration {
+				enum "auto" {
+					description "Determine point-to-point from duplex setting";
+					configd:help "Determine point-to-point from duplex setting";
+				}
+				enum "on";
+				enum "off";
+			}
+			default "auto";
+		}
+	}
+
+	augment /if:interfaces/interfaces-dataplane:dataplane/interfaces-bridge:bridge-group {
+		uses rstp-port;
+	}
+	augment /if:interfaces/interfaces-tunnel:tunnel/interfaces-bridge:bridge-group {
+		uses rstp-port;
+	}
+	augment /if:interfaces/interfaces-bonding:bonding/interfaces-bridge:bridge-group {
+		uses rstp-port;
+	}
+	augment /if:interfaces/interfaces-l2tpeth:l2tpeth/interfaces-l2tpeth:vif/interfaces-bridge:bridge-group {
+		uses rstp-port;
+	}
+	augment /if:interfaces/interfaces-l2tpeth:l2tpeth/interfaces-bridge:bridge-group {
+		uses rstp-port;
+	}
+	augment /if:interfaces/interfaces-dataplane:dataplane/interfaces-dataplane:vif/interfaces-bridge:bridge-group {
+		uses rstp-port;
+	}
+	augment /if:interfaces/interfaces-bonding:bonding/interfaces-bonding:vif/interfaces-bridge:bridge-group {
+		uses rstp-port;
+	}
+	augment /if:interfaces/interfaces-dataplane:dataplane/interfaces-dataplane-switch:switch-group {
+		uses rstp-port;
+	}
+
+	grouping rapid-spanning-tree {
+		leaf tx-hold-count {
+			type uint8 {
+				range 1..10;
+			}
+			default "6";
+			description "Maximum number of BPDUs transmitted during hello-time period.";
+			configd:help "Maximum number of BPDUs transmitted during hello-time period";
+			configd:update "vyatta-bridge-stp --bridge=$VAR(../../@) --action=set_txhold --val=$VAR(@)";
+		}
+		leaf version {
+			type enumeration {
+				enum "stp" {
+					configd:help "Spanning Tree Protocol (802.1d)";
+					description "Spanning Tree Protocol (802.1d)";
+				}
+				enum "rstp" {
+					configd:help "Rapid Spanning Tree Protocol (802.1w)";
+					description "Rapid Spanning Tree Protocol (802.1w)";
+				}
+				enum "mstp" {
+					configd:help "Multiple Spanning Tree Protocol (802.1s)";
+					description "Multiple Spanning Tree Protocol (802.1s)";
+				}
+			}
+			configd:help "Spanning Tree version";
+			default "rstp";
+			description "Spanning Tree version.  If rstp (802.1w) is configured the
+ operational version will revert to stp (802.1d) if an stp BPDU is received.";
+			configd:update "vyatta-bridge-stp --bridge=$VAR(../../@) --action=set_version --val=$VAR(@)";
+		}
+	}
+
+	augment /if:interfaces/interfaces-bridge:bridge/interfaces-bridge-stp:spanning-tree {
+		uses rapid-spanning-tree;
+	}
+	augment /if:interfaces/interfaces-switch:switch/interfaces-bridge-stp:spanning-tree {
+		uses rapid-spanning-tree;
+	}
+}

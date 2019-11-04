@@ -1,0 +1,11 @@
+#!/opt/vyatta/bin/cliexpr
+#Bridge group existence check
+commit:expression: ($VAR(@) in $VAR(/interfaces/bridge/@@) || \
+                    $VAR(@) in $VAR(/interfaces/virtual-bridge/@@)) ; \
+                   "Bridge '$VAR(@)' does not exist"
+#Mutual exclusion with IPv4/IPv6/L3 config
+commit:expression: $VAR(../../address) == "" ; \
+       "IP v4/v6 routing protocols cannot be configured on bridge group members"
+#Mutual exclusion with pbr config
+commit:expression: $VAR(../../policy/route) == "" ; \
+       "PBR cannot be configured on bridge group members"

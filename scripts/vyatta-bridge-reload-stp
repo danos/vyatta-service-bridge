@@ -1,0 +1,137 @@
+#! /usr/bin/perl
+#
+# Copyright (c) 2018, 2019, AT&T Intellectual Property.
+# All rights reserved.
+#
+# SPDX-License-Identifier: GPL-2.0-only
+#
+use strict;
+use warnings;
+use Readonly;
+
+use lib '/opt/vyatta/share/perl5/';
+
+use Getopt::Long;
+use File::Slurp qw(read_dir read_file);
+use JSON qw( decode_json );
+use Data::Dumper;
+
+use Vyatta::SpanningTreeBridge;
+use Vyatta::SpanningTreePort;
+
+Readonly my $mstpctl     => '/sbin/mstpctl';
+Readonly my $brctl       => '/sbin/brctl';
+Readonly my $mstpcfgfile => "/run/mstpd/mstpd.conf";
+
+my ( $help, $debug );
+
+#
+# Some of the port fields are simple "empty" attributes which, when
+# converted into a Perl hash, end up as entries with an undefined
+# value:
+#
+# 'auto-edge' => undef
+#
+sub attr_exists {
+    my ( $cfg, $key ) = @_;
+
+    return exists $cfg->{$key};
+}
+
+sub reload_usage {
+    print "usage: $0 [--debug ]\n";
+    print "usage: $0 [--help ]\n";
+    print "\n";
+    exit 1;
+}
+
+GetOptions(
+    "help"  => \$help,
+    "debug" => \$debug,
+) or reload_usage();
+
+reload_usage() if ($help);
+
+#
+# Give the MSTP daemon a chance to settle
+#
+select(undef, undef, undef, 0.1);
+
+my $stpcfg = ();
+
+if ( -r "$mstpcfgfile" ) {
+    my $json = read_file("$mstpcfgfile");
+    $stpcfg = decode_json($json);
+} else {
+    print "Missing configuration file ($mstpcfgfile)\n";
+    exit 0;
+}
+
+print "STP Config: \n" . Dumper($stpcfg) if ($debug);
+
+foreach my $cfg ( @{$stpcfg} ) {
+    my $name    = $cfg->{name};
+    my $stp     = $cfg->{'stp'};
+    my $version = $stp->{'version'};
+    system("$mstpctl addbridge $name");
+    system("$brctl stp $name on");
+
+    my $bridge = Vyatta::SpanningTreeBridge->new( $name, $debug );
+
+    $bridge->set_fwd_delay( $stp->{'forwarding-delay'} );
+    $bridge->set_hello( $stp->{'hello-time'} );
+    $bridge->set_max_age( $stp->{'max-age'} );
+    $bridge->set_max_hops( $stp->{'max-hops'} );
+    $bridge->set_priority( $stp->{'priority'} );
+    $bridge->set_tx_hold_count( $stp->{'tx-hold-count'} );
+    $bridge->set_spanning_tree_version( $stp->{'version'} );
+
+    my $mstp = $stp->{'mstp'};
+    if ( ( $version eq 'mstp' ) && ( keys( %{$mstp} ) ) ) {
+        $bridge->mstp_region_update( $mstp->{'region'}->{'name'},
+            $mstp->{'region'}->{'revision'} );
+
+        foreach my $inst ( @{ $mstp->{'instance'} } ) {
+            my $mstid = $inst->{'id'};
+
+            $bridge->mstp_msti_create($mstid);
+            $bridge->mstp_msti_set_priority( $mstid, $inst->{'priority'} );
+            my $vlans = $inst->{'vlan'};
+            $bridge->mstp_msti_set_vlans( $mstid, $vlans );
+        }
+    }
+
+    foreach my $p ( @{ $cfg->{'ports'} } ) {
+        my $params = $p->{'params'};
+        my $port = Vyatta::SpanningTreePort->new( $name, $p->{'port'}, $debug );
+
+        $port->set_priority( $params->{'priority'} );
+        $port->set_path_cost( $params->{'cost'} );
+        $port->set_root_block( attr_exists( $params, 'root-block' ) );
+        $port->set_bpdu_guard( attr_exists( $params, 'bpdu-guard' ) );
+        $port->set_pvst_guard( attr_exists( $params, 'pvst-guard' ) );
+        $port->set_bpdu_filter( attr_exists( $params, 'bpdu-filter' ) );
+        $port->set_pvst_filter( attr_exists( $params, 'pvst-filter' ) );
+        $port->set_admin_edge( attr_exists( $params, 'admin-edge' ) );
+        $port->set_auto_edge( attr_exists( $params, 'auto-edge' ) );
+        $port->set_restrict_tcn( attr_exists( $params, 'restrict-tcn' ) );
+        $port->set_network_port( attr_exists( $params, 'network-port' ) );
+
+        my $p2p = $params->{'point-to-point'};
+        $p2p = "yes" if ( $p2p eq 'on' );
+        $p2p = "no"  if ( $p2p eq 'off' );
+        $port->set_p2p_detection($p2p);
+
+        my $mstp = $params->{'mstp'};
+        if ( ( $version eq 'mstp' ) && ( keys( %{$mstp} ) ) ) {
+            foreach my $inst ( $mstp->{'instance'} ) {
+                my $mstid = $inst->{'id'};
+
+                $port->mstp_msti_set_priority( $mstid, $inst->{'priority'} );
+                $port->mstp_msti_set_path_cost( $mstid, $inst->{'cost'} );
+            }
+        }
+    }
+}
+
+exit 0;

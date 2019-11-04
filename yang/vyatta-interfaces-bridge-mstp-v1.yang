@@ -1,0 +1,351 @@
+module vyatta-interfaces-bridge-mstp-v1 {
+	namespace "urn:vyatta.com:mgmt:vyatta-interfaces-bridge-mstp:1";
+	prefix vyatta-interfaces-bridge-mstp;
+
+	import vyatta-interfaces-v1 {
+		prefix if;
+	}
+	import vyatta-interfaces-dataplane-v1 {
+		prefix interfaces-dataplane;
+	}
+	import vyatta-interfaces-bridge-spanning-tree-v1 {
+		prefix interfaces-bridge-stp;
+	}
+	import vyatta-interfaces-bridge-rstp-v1 {
+		prefix interfaces-bridge-rstp;
+	}
+	import vyatta-interfaces-bridge-state-v1 {
+		prefix br-state;
+	}
+	import vyatta-interfaces-switch-v1 {
+		prefix interfaces-switch;
+	}
+	import vyatta-interfaces-dataplane-switch-v1 {
+		prefix interfaces-dataplane-switch;
+	}
+	import configd-v1 {
+		prefix configd;
+	}
+
+	organization "AT&T Inc.";
+	contact
+		"AT&T
+		 Postal: 208 S. Akard Street
+		         Dallas, TX 75202
+		 Web: www.att.com";
+
+	description
+		"Copyright (c) 2018-2019, AT&T Intellectual Property.
+		 All rights reserved.
+
+		 Redistribution and use in source and binary forms, with or
+		 without modification, are permitted provided that the following
+		 conditions are met:
+
+		 1. Redistributions of source code must retain the above copyright
+			notice, this list of conditions and the following disclaimer.
+		 2. Redistributions in binary form must reproduce the above
+			copyright notice, this list of conditions and the following
+			disclaimer in the documentation and/or other materials provided
+			with the distribution.
+		 3. Neither the name of the copyright holder nor the names of its
+			contributors may be used to endorse or promote products derived
+			from this software without specific prior written permission.
+
+		 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+		 'AS IS' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+		 LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+		 FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+		 COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+		 INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+		 BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+		 LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+		 CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+		 LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+		 ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+		 POSSIBILITY OF SUCH DAMAGE.
+
+		 SPDX-License-Identifier: BSD-3-Clause
+
+		 The YANG module for the spanning-tree additions associated
+		 with MSTP (IEEE 802.1q-2014, originally 802.1s)";
+
+	revision 2019-03-20 {
+		description
+			"Operational YANG state moved from vyatta-interfaces-dataplane-switch
+			 to vyatta-interfaces-bridge-state";
+	}
+
+	revision 2018-05-16 {
+		description
+			"Update bridge priority to allow for conventional style values
+			 (0, 4096, 8192, ...)";
+	}
+
+	revision 2018-04-18 {
+		description "Initial revision of version 1";
+	}
+
+	typedef mstp-instance {
+		description
+			"MSTP Instance identifier (MSTI)";
+		type uint16 {
+			range 1..4094;
+		}
+	}
+
+	grouping mstp-switch-grouping {
+		container mstp {
+			description
+				"Multiple Spanning Tree Protocol (MSTP) configuration";
+
+			configd:help "Multiple Spanning Tree Protocol configuration";
+			configd:end "vyatta-bridge-stp --bridge=$VAR(../../@) --action=update_mstp --val=$VAR(../version/@)";
+			configd:priority "400";
+			must "not(../interfaces-bridge-rstp:version = 'mstp') or region/name" {
+				error-message "The region name must be defined when operating in MSTP mode";
+			}
+
+		container region {
+				description
+					"MSTP region configuration. All MSTP-enabled devices with the same
+					name, revision number and MSTI to VLAN mapping
+					are members of the same region.";
+
+				configd:help "MSTP region configuration";
+				leaf name {
+					description
+						"The name for this MSTP region.";
+					configd:help "The name for this MSTP region";
+					type string {
+						length "1..32";
+					}
+				}
+				leaf revision {
+					description
+						"The revision number of this region configuration. Take care when
+						changing the revision number of the region, updating the value
+						will result in a completely new MSTP region. Changing the value
+						from its default is really only necessary in order to distinguish
+						two regions with the same (fixed) name.";
+
+					configd:help "The revision number of this region configuration";
+					type uint16;
+					default 0;
+				}
+			}
+
+			list instance {
+				description
+					"MSTI - logical spanning-tree instance";
+
+				configd:help "MSTI - logical spanning-tree instance";
+				max-elements 15;
+				key id;
+				leaf id {
+					type mstp-instance;
+				}
+
+				leaf-list vlan {
+					description
+						"VLAN-ID associated with this instance. For an MSTI to be viable it
+						must include at least one VLAN";
+
+					configd:help "VLAN-ID associated with this instance";
+					type interfaces-switch:vlan-id {
+						configd:help "VLAN Identifier";
+					}
+					min-elements 1;
+					must "1 = count(../../instance[vlan = current()])" {
+						error-message "The same VLAN-ID cannot be assigned to more than one instance";
+					}
+				}
+
+				leaf priority {
+					description
+						"Bridge Priority for this instance, an unsigned value used to represent
+						the priority component of a Bridge
+						Identifier. As per the defined IEEE standards,
+						valid bridge priorities are in the range 0
+						through 61440, in steps of 4096.  A lower
+						number represents a higher bridge priority.
+
+						Alternatively a 'shorthand value' may be entered, a number
+						in the range 0..15.";
+					configd:help "Bridge Priority for this instance (0 is highest priority)";
+					type interfaces-bridge-stp:stp-bridge-priority;
+					default "8";
+					must "(current() <= 15) or ((current() mod 4096) = 0)" {
+						error-message "Priority must be a multiple of 4096 or be in the range 0-15";
+					}
+				}
+			}
+		}
+	}
+
+	augment /if:interfaces/interfaces-switch:switch/interfaces-bridge-stp:spanning-tree {
+		uses mstp-switch-grouping;
+	}
+
+	augment /if:interfaces/interfaces-dataplane:dataplane/interfaces-dataplane-switch:switch-group {
+		container mstp {
+			description
+				"Multiple Spanning Tree Protocol port (interface) configuration";
+
+			configd:help "MSTP port configuration";
+
+			list instance {
+				description
+					"Port configuration for this MSTP instance (MSTI)";
+
+				configd:help "MSTI port configuration";
+				key id;
+				leaf id {
+					type leafref {
+						path "/if:interfaces/interfaces-switch:switch"+
+							"[interfaces-switch:name = "+
+							"current()/../../../interfaces-dataplane-switch:switch]"+
+							"/interfaces-bridge-stp:spanning-tree"+
+							"/vyatta-interfaces-bridge-mstp:mstp"+
+							"/vyatta-interfaces-bridge-mstp:instance"+
+							"/vyatta-interfaces-bridge-mstp:id";
+					}
+				}
+
+				uses interfaces-bridge-stp:stp-port-common-grp;
+			}
+		}
+	}
+
+	augment /if:interfaces/interfaces-switch:switch-state/interfaces-switch:switches {
+		container mstp {
+			config false;
+			leaf name {
+				description "MSTP region name";
+				type string;
+			}
+			leaf revision {
+				description "MSTP region revision number";
+				type uint16;
+			}
+			leaf digest {
+				description "MSTP region digest (MD5 hash) of VLAN to MSTI mapping";
+				type string;
+			}
+			leaf default-vlans {
+				description
+					"Set of VLANs assigned to the IST (MSTI 0), i.e. the remaining
+					VLANs after assignment to individual MSTIs";
+				type string;
+			}
+			list instance {
+				description "Operational state for each instance (MSTI)";
+				key mstid;
+				leaf mstid {
+					description "MSTI identifier";
+					type uint16;
+				}
+				leaf bridge-id {
+					description "The bridge-id for this MSTI";
+					type string;
+				}
+				leaf regional-root {
+					description "The bridge identifier of the current regional root for this MSTI";
+					type string;
+				}
+				leaf root-port {
+					description "The best path to the designated root bridge";
+					type uint32;
+				}
+				leaf internal-path-cost {
+					description "The path cost from the transmitting bridge to the regional root";
+					type uint32;
+				}
+				leaf topology-change-time {
+					description "Time since the last topology change notification";
+					type uint32;
+					units "seconds";
+				}
+				leaf topology-change-count {
+					description "Number of topology change notifications received";
+					type uint32;
+				}
+				leaf topology-change {
+					description "True if any port has a valid topology change";
+					type boolean;
+				}
+				leaf topology-change-port {
+					description "Current port to receive topology change notification";
+					type uint32;
+				}
+				leaf last-topology-change-port {
+					description "The last port to receive a topology change notification";
+					type uint32;
+				}
+				leaf vlans {
+					description "The list of VLANs mapped to this MSTI";
+					type string;
+				}
+			}
+		}
+	}
+
+	augment /if:interfaces/interfaces-switch:switch-state/interfaces-switch:switches/interfaces-switch:interfaces {
+		container mstp {
+			config false;
+
+			list instance {
+				description "Operational port state for each instance (MSTI)";
+				key mstid;
+				leaf mstid {
+					description "MSTI identifier";
+					type uint16;
+				}
+				leaf port-id {
+					description "MSTI port identifier (priority plus interface number)";
+					type string;
+				}
+				leaf role {
+					description "MSTI role";
+					type br-state:bridge-port-role;
+				}
+				leaf state {
+					description
+						"MSTI state. Note that this is not the standard Linux bridge port
+						state, the non-forwarding states (DISABLED,
+						BLOCKING & LISTENING) are reduced to the state
+						DISCARDING";
+					type br-state:bridge-port-state;
+				}
+				leaf internal-port-cost {
+					description "MSTI port cost (cost from bridge to regional root)";
+					type uint32;
+				}
+				leaf admin-internal-cost {
+					description "Configured MSTI internal port path cost";
+					type string;
+				}
+				leaf disputed {
+					description "If true, the port has been marked as disputed";
+					type boolean;
+				}
+				leaf designated-internal-cost {
+					description "The internal port path cost to designated bridge";
+					type uint32;
+				}
+				leaf designated-port {
+					description "The port determined to have the lowest cost";
+					type string;
+				}
+				leaf designated-bridge {
+					description "The designated bridge seen by this port";
+					type string;
+				}
+				leaf designated-regional-root {
+					description "The designated regional root bridge seen by this port";
+					type string;
+				}
+			}
+		}
+	}
+}
