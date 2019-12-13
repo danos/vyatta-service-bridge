@@ -237,10 +237,25 @@ sub update_bridge {
 
     my $cfg = get_stp_cfg( $bridge->{'bridge_name'} );
 
-    $bridge->set_fwd_delay( $cfg->returnValue('forwarding-delay') ) == 0
-      or exit 1;
+    #
+    # Need to ensure 2*(forwarding-delay-1) >= max-age - the YANG
+    # constraint ensures that the condition holds. But mstpd only gets
+    # to see 1 value at a time. In order to not upset mstpd, figure
+    # out which attribute to set first. Check the constraint using the
+    # YANG value of one of the attributes and the current mstpd value
+    # of the other attribute.
+    #
+    my $age    = $cfg->returnValue('max-age');
+    my $fwddly = $cfg->returnValue('forwarding-delay');
+    if ( 2 * ( $bridge->{'brfwddly'} - 1 ) >= $age ) {
+        $bridge->set_max_age($age) == 0      or exit 1;
+        $bridge->set_fwd_delay($fwddly) == 0 or exit 1;
+    } else {
+        $bridge->set_fwd_delay($fwddly) == 0 or exit 1;
+        $bridge->set_max_age($age) == 0      or exit 1;
+    }
+
     $bridge->set_hello( $cfg->returnValue('hello-time') ) == 0  or exit 1;
-    $bridge->set_max_age( $cfg->returnValue('max-age') ) == 0   or exit 1;
     $bridge->set_priority( $cfg->returnValue('priority') ) == 0 or exit 1;
     $bridge->set_tx_hold_count( $cfg->returnValue('tx-hold-count') ) == 0
       or exit 1;
