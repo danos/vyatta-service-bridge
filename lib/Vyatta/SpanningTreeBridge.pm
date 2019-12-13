@@ -794,7 +794,7 @@ sub mstpctl_set_param {
 sub set_fwd_delay {
     my ( $self, $fdly ) = @_;
 
-    return mstpctl_set_param( $self, "fwddly", "setfdelay", $fdly );
+    return mstpctl_set_param( $self, "brfwddly", "setfdelay", $fdly );
 }
 
 sub set_hello {
@@ -806,7 +806,7 @@ sub set_hello {
 sub set_max_age {
     my ( $self, $time ) = @_;
 
-    return mstpctl_set_param( $self, "maxage", "setmaxage", $time );
+    return mstpctl_set_param( $self, "brmaxage", "setmaxage", $time );
 }
 
 sub set_max_hops {
