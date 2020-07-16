@@ -134,7 +134,7 @@ sub collect_stp_configuration {
         $path = "interfaces $type $name spanning-tree";
         next if ( !$client->node_exists( $db, $path ) );
 
-        my $tree = $client->tree_get_full_hash($path);
+        my $tree = $client->tree_get_hash( $path );
         my %inst;
 
         $inst{'name'} = $name;
@@ -148,7 +148,7 @@ sub collect_stp_configuration {
             $path = "interfaces $iftype $port $type-group";
             next if ( !$client->node_exists( $db, $path ) );
 
-            my $ptree = $client->tree_get_full_hash($path);
+            my $ptree = $client->tree_get_hash( $path );
             $pinst{'port'}   = $port;
             $pinst{'params'} = $ptree->{"$type-group"};
             push( @stpports, \%pinst );
