@@ -179,15 +179,18 @@ sub generate_mstp_configuration {
 }
 
 sub enable_spanning_tree {
-    my ($bridge) = @_;
+    my ($bridge_name) = @_;
     my $rv = 0;
 
     # Is mstpd installed and feature-enabled?
-    $rv = userspace_stp_op( $bridge, 'on' );
+    $rv = userspace_stp_op( $bridge_name, 'on' );
     if ( $rv != 0 ) {
         return $rv;
     }
-    update_all_bridge_ports($bridge);
+
+    my $bridge = Vyatta::SpanningTreeBridge->new( $bridge_name, $DEBUG );
+    update_bridge($bridge) if $bridge->{exists};
+    update_all_bridge_ports($bridge_name);
     return;
 }
 
