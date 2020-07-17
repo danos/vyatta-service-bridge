@@ -1,3 +1,11 @@
+vyatta-service-bridge (2.12) unstable; urgency=medium
+
+  [ Parthiban Ramalingam ]
+  * Dataplane interface does not come up after DUT reload with STP attributes
+  * Spanning Tree Switch Priority configuration does not survive DUT reload
+
+ -- Mark Gillott <mgillott@vyatta.att-mail.com>  Fri, 17 Jul 2020 09:27:38 +0100
+
 vyatta-service-bridge (2.11) unstable; urgency=medium
 
   * Use correct mstpd value when checking for "noops"
