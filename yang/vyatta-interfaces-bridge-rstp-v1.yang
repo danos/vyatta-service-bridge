@@ -32,6 +32,9 @@ module vyatta-interfaces-bridge-rstp-v1 {
 	import configd-v1 {
 		prefix configd;
 	}
+	import vyatta-interfaces-bonding-switch-v1 {
+		prefix interfaces-bonding-switch;
+	}
 
 	organization "AT&T Inc.";
 	contact
@@ -41,7 +44,7 @@ module vyatta-interfaces-bridge-rstp-v1 {
 		 Web: www.att.com";
 
 	description
-		"Copyright (c) 2017-2019, AT&T Intellectual Property.
+		"Copyright (c) 2017-2020, AT&T Intellectual Property.
 		 All rights reserved.
 
 		 Copyright (c) 2015-2016 by Brocade Communications Systems, Inc.
@@ -78,6 +81,9 @@ module vyatta-interfaces-bridge-rstp-v1 {
 
 		 The YANG module for vyatta-interfaces-bridge-rstp-v1.";
 
+	revision 2020-10-20 {
+		description "Add support for bonding interface to switch-group";
+	}
 	revision 2019-07-26 {
 		description
 			"Eliminated updates for each STP attribute, the 'top-level' update
@@ -166,6 +172,9 @@ directly to the forwarding state.";
 		uses rstp-port;
 	}
 	augment /if:interfaces/interfaces-dataplane:dataplane/interfaces-dataplane-switch:switch-group {
+		uses rstp-port;
+	}
+	augment /if:interfaces/interfaces-bonding:bonding/interfaces-bonding-switch:switch-group {
 		uses rstp-port;
 	}
 

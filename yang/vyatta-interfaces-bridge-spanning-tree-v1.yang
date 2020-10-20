@@ -26,6 +26,9 @@ module vyatta-interfaces-bridge-spanning-tree-v1 {
 	import vyatta-interfaces-dataplane-switch-v1 {
 		prefix interfaces-dataplane-switch;
 	}
+	import vyatta-interfaces-bonding-switch-v1 {
+		prefix interfaces-bonding-switch;
+	}
 
 	import configd-v1 {
 		prefix configd;
@@ -39,8 +42,8 @@ module vyatta-interfaces-bridge-spanning-tree-v1 {
 		 Web: www.att.com";
 
 	description
-		"Copyright (c) 2017-2019, AT&T Intellectual Property.
-		 All right reserved.
+		"Copyright (c) 2017-2020, AT&T Intellectual Property.
+		 All rights reserved.
 
 		 Copyright (c) 2015-2016 by Brocade Communications Systems, Inc.
 		 All rights reserved.
@@ -77,6 +80,9 @@ module vyatta-interfaces-bridge-spanning-tree-v1 {
 		 The YANG module for vyatta-interfaces-bridge-spanning-tree-v1";
 
 
+	revision 2020-10-20 {
+		description "Add support for bonding interface to switch-group";
+	}
 	revision 2019-07-26 {
 		description
 			"Instead of individual updates for each STP attribute, invoke a
@@ -263,6 +269,10 @@ module vyatta-interfaces-bridge-spanning-tree-v1 {
 		configd:end "vyatta-bridge-stp --action=update_port --bridge=$VAR(bridge/@) --port=$VAR(../@)";
 	}
 	augment /if:interfaces/interfaces-dataplane:dataplane/interfaces-dataplane-switch:switch-group {
+		uses spanning-tree-port;
+		configd:end "vyatta-bridge-stp --action=update_port --bridge=$VAR(switch/@) --port=$VAR(../@)";
+	}
+	augment /if:interfaces/interfaces-bonding:bonding/interfaces-bonding-switch:switch-group {
 		uses spanning-tree-port;
 		configd:end "vyatta-bridge-stp --action=update_port --bridge=$VAR(switch/@) --port=$VAR(../@)";
 	}
