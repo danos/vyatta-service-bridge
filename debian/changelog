@@ -1,3 +1,12 @@
+vyatta-service-bridge (2.13) unstable; urgency=medium
+
+  [ Parthiban Ramalingam ]
+  * DVE2.0_STP: Auto-edge not enabled by default on physical interfaces but enabled by default on bonding interfaces.
+
+  [ Charles (Chas) Williams ]
+
+ -- Charles (Chas) Williams <ciwillia@vyatta.att-mail.com>  Tue, 27 Oct 2020 09:39:28 -0400
+
 vyatta-service-bridge (2.12) unstable; urgency=medium
 
   [ Parthiban Ramalingam ]
